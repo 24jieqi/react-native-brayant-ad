@@ -788,6 +788,176 @@ const RewardVideoPage = () => {
 };
 ```
 
+### 在列表中使用不同广告位 ID
+
+当需要在列表中展示不同位置的广告时，可以通过传入不同的 `adId` 来实现（组件内部会根据 `adId` 自动映射到对应的广告位）：
+
+```tsx
+import { FeedAdView } from '@24jieqi/react-native-brayant-ad';
+import { FlatList, View, Text } from 'react-native';
+
+// 定义广告位池配置（可选，用于实现广告位轮询）
+const AD_SLOT_POOL = [
+  'your_codeid_1', // 第5位广告
+  'your_codeid_2', // 第10位广告
+];
+
+// 根据 adId 选择广告位（实现轮询逻辑）
+const getSlotIdByAdId = (adId: string): string => {
+  const index = adId
+    .split('')
+    .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return AD_SLOT_POOL[index % AD_SLOT_POOL.length];
+};
+
+const ListPage = () => {
+  const renderItem = ({ item, index }: { item: any; index: number }) => {
+    // 在第5位和第10位插入广告
+    if (index === 5 || index === 10) {
+      // 生成唯一的 adId，例如：ad_5_1707123456789
+      const adId = `ad_${index}_${Date.now()}`;
+
+      return (
+        <>
+          {/* 正常列表项 */}
+          <View style={{ padding: 16 }}>
+            <Text>{item.title}</Text>
+          </View>
+          {/* 广告组件 - 使用 adId 作为唯一标识 */}
+          <FeedAdView
+            key={adId}  // 强制重新创建组件实例
+            codeid={getSlotIdByAdId(adId)}
+            adWidth={375}
+            visible={true}
+            onAdLayout={(data: any) => {
+              console.log(`位置 ${index} 广告加载成功！`, data);
+            }}
+            onAdError={(err: any) => {
+              console.log(`位置 ${index} 广告加载失败！`, err);
+            }}
+          />
+        </>
+      );
+    }
+
+    return (
+      <View style={{ padding: 16 }}>
+        <Text>{item.title}</Text>
+      </View>
+    );
+  };
+
+  return (
+    <FlatList
+      data={listData}
+      renderItem={renderItem}
+      keyExtractor={(item, index) => `item-${index}`}
+    />
+  );
+};
+```
+
+#### 封装 NativeAd 组件（推荐用法）
+
+为了更好的开发体验，建议封装一个 `NativeAd` 组件，对外暴露 `adId` 参数：
+
+```tsx
+import { FeedAdView, preloadFeedAd } from '@24jieqi/react-native-brayant-ad';
+import React, { useEffect, useState } from 'react';
+import { View } from 'react-native';
+
+interface NativeAdProps {
+  adId: string;        // 唯一广告标识，用于瀑布流场景
+  slotID?: string;     // 可选：指定广告位，不传则使用默认或轮询
+  style?: ViewStyle;
+  onAdLoaded?: Function;
+  onAdError?: Function;
+  onAdClick?: Function;
+  onAdClose?: Function;
+}
+
+// 广告位池配置
+const AD_SLOT_POOL = [
+  'your_codeid_for_position_5',
+  'your_codeid_for_position_10',
+];
+
+// 根据 adId 选择广告位（实现轮询）
+const getSlotIdByAdId = (adId: string): string => {
+  const index = adId
+    .split('')
+    .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return AD_SLOT_POOL[index % AD_SLOT_POOL.length];
+};
+
+export const NativeAd: React.FC<NativeAdProps> = ({
+  adId,
+  slotID,
+  style,
+  onAdLoaded,
+  onAdError,
+  onAdClick,
+  onAdClose,
+}) => {
+  const [isReady, setIsReady] = useState(false);
+  const codeid = slotID || getSlotIdByAdId(adId);
+
+  useEffect(() => {
+    // 预加载广告
+    preloadFeedAd({ appid: 'your_appid', codeid })
+      .then(() => setIsReady(true))
+      .catch(() => setIsReady(true));
+  }, [codeid]);
+
+  if (!isReady) return null;
+
+  return (
+    <View style={style}>
+      <FeedAdView
+        key={adId}  // 关键：强制重新创建组件实例
+        codeid={codeid}
+        adWidth={375}
+        visible={true}
+        onAdLayout={(e) => onAdLoaded?.(e.nativeEvent)}
+        onAdError={(e) => onAdError?.(e.nativeEvent)}
+        onAdClick={(e) => onAdClick?.(e.nativeEvent)}
+        onAdClose={(e) => onAdClose?.(e.nativeEvent)}
+      />
+    </View>
+  );
+};
+
+export default NativeAd;
+```
+
+**使用封装的组件**：
+
+```tsx
+import { NativeAd } from './NativeAd';
+
+// 在列表中使用 - 只需传入 adId
+<FlatList
+  data={data}
+  renderItem={({ item, index }) => (
+    <View>
+      <Text>{item.title}</Text>
+      {/* 第5位和第10位插入不同广告 */}
+      {index === 5 && <NativeAd adId="ad_5_1707123456789" />}
+      {index === 10 && <NativeAd adId="ad_10_1707123456790" />}
+    </View>
+  )}
+/>
+```
+
+**关键点说明**：
+
+| 参数 | 说明 | 示例 |
+|------|------|------|
+| `adId` | 唯一广告标识，用于区分不同位置的广告 | `ad_5_1707123456789` |
+| `key={adId}` | 强制 React 重新创建组件实例，确保每次展示不同广告 | - |
+| `getSlotIdByAdId` | 根据 `adId` 哈希计算选择广告位，实现轮询 | - |
+| `slotID` | 可选参数，直接指定广告位 ID | `your_codeid_1` |
+
 ## License
 
 MIT

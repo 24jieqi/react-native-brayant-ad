@@ -35,6 +35,13 @@ public class FeedAdViewManager extends ViewGroupManager<FeedAdView> {
   }
 
   @Override
+  public void onDropViewInstance(@NonNull FeedAdView view) {
+    // 组件卸载时释放广告资源，防止内存泄漏
+    view.destroy();
+    super.onDropViewInstance(view);
+  }
+
+  @Override
   public boolean needsCustomLayoutForChildren() {
     return true;
   }

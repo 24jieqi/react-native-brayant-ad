@@ -43,6 +43,9 @@ public class FeedAdView extends RelativeLayout {
   private final long startTime = 0;
   private boolean mHasShowDownloadActive = false;
 
+  // 当前展示的广告实例，用于资源释放
+  private TTNativeExpressAd mCurrentAd;
+
   public FeedAdView(ReactContext context) {
     super(context);
     mContext = context.getCurrentActivity();
@@ -127,8 +130,8 @@ public class FeedAdView extends RelativeLayout {
           }
 
           TTNativeExpressAd ad = ads.get(0);
-          // 缓存加载成功的广告
-          // DyADCore.feedAd = ad;
+          // 保存广告引用，用于后续销毁
+          _this.mCurrentAd = ad;
           _showTTAd(ad);
         }
       }
@@ -354,5 +357,25 @@ public class FeedAdView extends RelativeLayout {
     reactContext
       .getJSModule(RCTEventEmitter.class)
       .receiveEvent(getId(), "onAdLayout", event);
+  }
+
+  /**
+   * 销毁广告资源，释放内存
+   * 在组件卸载或需要重新加载广告时调用
+   */
+  public void destroy() {
+    Log.d(TAG, "destroy: 释放广告资源");
+    // 清空广告容器
+    final RelativeLayout mExpressContainer = findViewById(R.id.feed_container);
+    if (mExpressContainer != null) {
+      mExpressContainer.removeAllViews();
+    }
+    // 销毁广告实例，释放原生资源
+    if (mCurrentAd != null) {
+      mCurrentAd.destroy();
+      mCurrentAd = null;
+    }
+    // 移除所有子视图
+    removeAllViews();
   }
 }
