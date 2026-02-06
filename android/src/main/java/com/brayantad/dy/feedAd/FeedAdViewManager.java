@@ -56,6 +56,11 @@ public class FeedAdViewManager extends ViewGroupManager<FeedAdView> {
     view.setWidth(adWidth);
   }
 
+  @ReactProp(name = "visible", defaultBoolean = true)
+  public void setVisible(FeedAdView view, boolean visible) {
+    view.setVisible(visible);
+  }
+
   @Override
   public Map getExportedCustomBubblingEventTypeConstants() {
     return MapBuilder

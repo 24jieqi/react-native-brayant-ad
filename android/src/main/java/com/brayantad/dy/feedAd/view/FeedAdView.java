@@ -43,6 +43,7 @@ public class FeedAdView extends RelativeLayout {
   private final long startTime = 0;
   private boolean mHasShowDownloadActive = false;
   private boolean mIsAdLoading = false;
+  private boolean mVisible = true;
 
   // 当前展示的广告实例，用于资源释放
   private TTNativeExpressAd mCurrentAd;
@@ -74,7 +75,20 @@ public class FeedAdView extends RelativeLayout {
     showAd();
   }
 
+  public void setVisible(boolean visible) {
+    mVisible = visible;
+    if (!visible) {
+      setVisibility(View.INVISIBLE);
+      return;
+    }
+    showAd();
+  }
+
   public void showAd() {
+    if (!mVisible) {
+      setVisibility(View.INVISIBLE);
+      return;
+    }
     Log.d(TAG, "showAd: width:" + _expectedWidth + " codeid:" + _codeid);
 
     // 显示广告
@@ -219,7 +233,7 @@ public class FeedAdView extends RelativeLayout {
             mExpressContainer.removeAllViews();
             mExpressContainer.addView(view);
           }
-          FeedAdView.this.setVisibility(View.VISIBLE);
+          FeedAdView.this.setVisibility(mVisible ? View.VISIBLE : View.INVISIBLE);
           onAdLayout((int) width, (int) height);
         }
       }
