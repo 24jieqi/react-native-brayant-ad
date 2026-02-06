@@ -30,6 +30,8 @@ public class BannerAdView extends RelativeLayout {
   private int mExpectedWidth = 0; // 宽度 dp，由外部设置（必填）
   private int mExpectedHeight = 0; // 高度 dp，由外部设置（必填），根据官方文档 Banner 广告高度不能为 0
   private boolean mIsAdLoading = false; // 防止重复加载广告
+  private boolean mVisible = true;
+  private boolean mHasRenderedAd = false;
 
   public BannerAdView(ReactContext context) {
     super(context);
@@ -75,15 +77,29 @@ public class BannerAdView extends RelativeLayout {
    * @param visible true: 可见，false: 不可见
    */
   public void setVisibility(boolean visible) {
-    if (visible) {
-      // 触发加载，但暂不显示（等待渲染成功）
-      showAd();
-    } else {
+    mVisible = visible;
+    if (!visible) {
       super.setVisibility(View.INVISIBLE);
+      return;
     }
+
+    if (mHasRenderedAd && mBannerAd != null) {
+      super.setVisibility(View.VISIBLE);
+      return;
+    }
+    // 仅在没有可复用广告实例时才加载
+    showAd();
   }
 
   public void showAd() {
+    if (!mVisible) {
+      super.setVisibility(View.INVISIBLE);
+      return;
+    }
+    if (mHasRenderedAd && mBannerAd != null) {
+      super.setVisibility(View.VISIBLE);
+      return;
+    }
     // 参数校验
     if (mExpectedWidth <= 0 || mExpectedHeight <= 0 || mCodeId == null || mCodeId.isEmpty()) {
       return;
@@ -199,6 +215,7 @@ public class BannerAdView extends RelativeLayout {
 
         @Override
         public void onRenderSuccess(View view, float width, float height) {
+          mHasRenderedAd = true;
           mExpressContainer.removeAllViews();
 
           RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(
@@ -311,12 +328,21 @@ public class BannerAdView extends RelativeLayout {
       mBannerAd.destroy();
       mBannerAd = null;
     }
+    mHasRenderedAd = false;
   }
 
   @Override
   protected void onAttachedToWindow() {
     super.onAttachedToWindow();
-    // 路由切换后重新挂载时，主动触发一次加载
+    if (!mVisible) {
+      super.setVisibility(View.INVISIBLE);
+      return;
+    }
+    if (mHasRenderedAd && mBannerAd != null) {
+      super.setVisibility(View.VISIBLE);
+      return;
+    }
+    // 路由切换后重新挂载时，仅在无可复用实例时才触发加载
     showAd();
   }
 }

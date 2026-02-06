@@ -44,6 +44,7 @@ public class FeedAdView extends RelativeLayout {
   private boolean mHasShowDownloadActive = false;
   private boolean mIsAdLoading = false;
   private boolean mVisible = true;
+  private boolean mHasRenderedAd = false;
 
   // 当前展示的广告实例，用于资源释放
   private TTNativeExpressAd mCurrentAd;
@@ -78,7 +79,11 @@ public class FeedAdView extends RelativeLayout {
   public void setVisible(boolean visible) {
     mVisible = visible;
     if (!visible) {
-      setVisibility(View.INVISIBLE);
+      super.setVisibility(View.INVISIBLE);
+      return;
+    }
+    if (mHasRenderedAd && mCurrentAd != null) {
+      super.setVisibility(View.VISIBLE);
       return;
     }
     showAd();
@@ -86,7 +91,11 @@ public class FeedAdView extends RelativeLayout {
 
   public void showAd() {
     if (!mVisible) {
-      setVisibility(View.INVISIBLE);
+      super.setVisibility(View.INVISIBLE);
+      return;
+    }
+    if (mHasRenderedAd && mCurrentAd != null) {
+      super.setVisibility(View.VISIBLE);
       return;
     }
     Log.d(TAG, "showAd: width:" + _expectedWidth + " codeid:" + _codeid);
@@ -228,6 +237,7 @@ public class FeedAdView extends RelativeLayout {
         @Override
         public void onRenderSuccess(View view, float width, float height) {
           mIsAdLoading = false;
+          mHasRenderedAd = true;
           RelativeLayout mExpressContainer = findViewById(R.id.feed_container);
           if (mExpressContainer != null) {
             mExpressContainer.removeAllViews();
@@ -392,6 +402,8 @@ public class FeedAdView extends RelativeLayout {
 
   public void onAdClose(String reason) {
     Log.d(TAG, "onAdClose: " + reason);
+    mHasRenderedAd = false;
+    super.setVisibility(View.INVISIBLE);
     WritableMap event = Arguments.createMap();
     event.putString("reason", reason);
     reactContext
@@ -416,6 +428,7 @@ public class FeedAdView extends RelativeLayout {
   public void destroy() {
     Log.d(TAG, "destroy: 释放广告资源");
     mIsAdLoading = false;
+    mHasRenderedAd = false;
     // 清空广告容器
     final RelativeLayout mExpressContainer = findViewById(R.id.feed_container);
     if (mExpressContainer != null) {
@@ -433,7 +446,15 @@ public class FeedAdView extends RelativeLayout {
   @Override
   protected void onAttachedToWindow() {
     super.onAttachedToWindow();
-    // 路由切换后重新挂载时，主动触发一次加载
+    if (!mVisible) {
+      super.setVisibility(View.INVISIBLE);
+      return;
+    }
+    if (mHasRenderedAd && mCurrentAd != null) {
+      super.setVisibility(View.VISIBLE);
+      return;
+    }
+    // 路由切换后重新挂载时，仅在无可复用实例时才触发加载
     showAd();
   }
 }
