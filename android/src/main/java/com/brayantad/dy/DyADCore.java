@@ -66,6 +66,9 @@ public class DyADCore {
   public static TTRewardVideoAd rewardAd;
   public static TTFullScreenVideoAd fullAd;
   public static TTNativeExpressAd feedAd;
+  public static String feedAdCodeId;
+  public static long feedAdCacheTime;
+  public static final long FEED_AD_CACHE_VALID_DURATION = 5 * 60 * 1000;
   public static TTNativeExpressAd drawfeedAd;
   public static CSJSplashAd splashAd;
   public static ReactContext reactContext;
@@ -149,5 +152,43 @@ public class DyADCore {
     }
     Log.d(TAG, "getRewardResult: " + json);
     return json;
+  }
+
+  public static synchronized boolean hasValidFeedAdCache(String codeId) {
+    if (feedAd == null || feedAdCodeId == null || codeId == null) {
+      return false;
+    }
+    if (!feedAdCodeId.equals(codeId)) {
+      return false;
+    }
+    long currentTime = System.currentTimeMillis();
+    return (currentTime - feedAdCacheTime) < FEED_AD_CACHE_VALID_DURATION;
+  }
+
+  public static synchronized void cacheFeedAd(String codeId, TTNativeExpressAd ad) {
+    clearFeedAdCache();
+    feedAd = ad;
+    feedAdCodeId = codeId;
+    feedAdCacheTime = System.currentTimeMillis();
+  }
+
+  public static synchronized TTNativeExpressAd consumeFeedAd(String codeId) {
+    if (!hasValidFeedAdCache(codeId)) {
+      return null;
+    }
+    TTNativeExpressAd ad = feedAd;
+    feedAd = null;
+    feedAdCodeId = null;
+    feedAdCacheTime = 0;
+    return ad;
+  }
+
+  public static synchronized void clearFeedAdCache() {
+    if (feedAd != null) {
+      feedAd.destroy();
+      feedAd = null;
+    }
+    feedAdCodeId = null;
+    feedAdCacheTime = 0;
   }
 }

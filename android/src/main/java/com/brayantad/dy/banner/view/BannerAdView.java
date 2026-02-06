@@ -158,10 +158,14 @@ public class BannerAdView extends RelativeLayout {
 
   // 显示广告
   private void showBannerAd(final TTNativeExpressAd ad) {
-    if (mActivity == null) {
+    Activity activity = mActivity != null ? mActivity : mReactContext.getCurrentActivity();
+    if (activity == null) {
+      mIsAdLoading = false;
+      onAdError("Activity not ready");
       return;
     }
-    mActivity.runOnUiThread(() -> {
+    mActivity = activity;
+    activity.runOnUiThread(() -> {
       bindAdListener(ad);
       ad.render();
     });
@@ -249,6 +253,7 @@ public class BannerAdView extends RelativeLayout {
           if (mExpressContainer != null) {
             mExpressContainer.removeAllViews();
           }
+          onAdDismiss();
           onAdDislike(value);
         }
 

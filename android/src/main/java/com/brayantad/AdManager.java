@@ -14,9 +14,9 @@ import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableMap;
+import com.facebook.react.bridge.ReadableType;
 
 import java.util.List;
-import java.util.Objects;
 
 public class AdManager extends ReactContextBaseJavaModule {
   public static ReactApplicationContext reactAppContext;
@@ -44,7 +44,7 @@ public class AdManager extends ReactContextBaseJavaModule {
     if (DyADCore.tt_appid != null) {
       DyADCore.initSdk(reactAppContext, DyADCore.tt_appid, DyADCore.debug);
       boolean sdkReady = TTAdSdk.isSdkReady();
-      if(!sdkReady) {
+      if (!sdkReady) {
         TTAdSdk.start(new TTAdSdk.Callback() {
           @Override
           public void success() {
@@ -58,8 +58,10 @@ public class AdManager extends ReactContextBaseJavaModule {
             promise.reject(TAG, "fail:  code = " + code + " msg = " + msg);
           }
         });
+        return;
       }
       promise.resolve(true);
+      return;
 //      if (options.hasKey("codeid_reward_video")) {
 //        DyADCore.codeid_reward_video = options.getString("codeid_reward_video");
 //        //提前加载
@@ -96,6 +98,7 @@ public class AdManager extends ReactContextBaseJavaModule {
 //        }
 //      }
     }
+    promise.reject(TAG, "appid is required");
   }
 
 
@@ -106,10 +109,11 @@ public class AdManager extends ReactContextBaseJavaModule {
   @ReactMethod
   public void loadFeedAd(ReadableMap options, final Promise promise) {
     String codeId = options.getString("codeid");
-    float width = 0;
-    if (options.hasKey("adWidth")) {
-      width = Float.parseFloat(Objects.requireNonNull(options.getString("adWidth")));
+    if (codeId == null || codeId.isEmpty()) {
+      promise.reject(TAG, "codeid is required");
+      return;
     }
+    float width = parseAdWidth(options);
     DyADCore.feedPromise = promise;
 //    if (DyADCore.feed_provider.equals("腾讯")) {
 //      //FIXME ...
@@ -135,10 +139,7 @@ public class AdManager extends ReactContextBaseJavaModule {
       return;
     }
 
-    float width = 0;
-    if (options.hasKey("adWidth")) {
-      width = Float.parseFloat(Objects.requireNonNull(options.getString("adWidth")));
-    }
+    float width = parseAdWidth(options);
 
     // 检查 SDK 是否初始化
     if (DyADCore.TTAdSdk == null) {
@@ -147,7 +148,7 @@ public class AdManager extends ReactContextBaseJavaModule {
     }
 
     // 如果已经有缓存的广告，直接返回成功
-    if (DyADCore.feedAd != null) {
+    if (DyADCore.hasValidFeedAdCache(codeId)) {
       promise.resolve(true);
       return;
     }
@@ -183,7 +184,7 @@ public class AdManager extends ReactContextBaseJavaModule {
             return;
           }
           // 缓存加载成功的广告
-          DyADCore.feedAd = ads.get(0);
+          DyADCore.cacheFeedAd(codeId, ads.get(0));
           promise.resolve(true);
         }
       }
@@ -223,21 +224,52 @@ public class AdManager extends ReactContextBaseJavaModule {
         @Override
         public void onError(int code, String message) {
           Log.d(TAG, message);
-          DyADCore.feedPromise.reject("101", "feed ad error" + message);
+          if (DyADCore.feedPromise != null) {
+            DyADCore.feedPromise.reject("101", "feed ad error" + message);
+            DyADCore.feedPromise = null;
+          }
         }
 
         @Override
         public void onNativeExpressAdLoad(List<TTNativeExpressAd> ads) {
           Log.d(TAG, "onNativeExpressAdLoad: FeedAd !!!");
-          if (ads == null || ads.size() == 0) {
+          if (ads == null || ads.isEmpty()) {
+            if (DyADCore.feedPromise != null) {
+              DyADCore.feedPromise.reject("101", "feed ad empty");
+              DyADCore.feedPromise = null;
+            }
             return;
           }
           // 缓存加载成功的信息流广告
-          DyADCore.feedAd = ads.get(0);
-          DyADCore.feedPromise.resolve(true);
+          DyADCore.cacheFeedAd(codeId, ads.get(0));
+          if (DyADCore.feedPromise != null) {
+            DyADCore.feedPromise.resolve(true);
+            DyADCore.feedPromise = null;
+          }
         }
       }
     );
+  }
+
+  private static float parseAdWidth(ReadableMap options) {
+    if (!options.hasKey("adWidth")) {
+      return 0;
+    }
+    ReadableType type = options.getType("adWidth");
+    if (type == ReadableType.Number) {
+      return (float) options.getDouble("adWidth");
+    }
+    if (type == ReadableType.String) {
+      try {
+        String width = options.getString("adWidth");
+        if (width != null) {
+          return Float.parseFloat(width);
+        }
+      } catch (NumberFormatException exception) {
+        Log.w(TAG, "Invalid adWidth value", exception);
+      }
+    }
+    return 0;
   }
 
   /**

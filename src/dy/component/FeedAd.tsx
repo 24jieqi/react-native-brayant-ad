@@ -20,10 +20,17 @@ export interface FeedAdProps {
   style?: ViewStyle;
   adWidth?: number;
   visible?: boolean;
-  onAdLayout?: Function;
-  onAdError?: Function;
-  onAdClose?: Function;
-  onAdClick?: Function;
+  onAdLayout?: (event: FeedAdEvent) => void;
+  onAdError?: (event: FeedAdEvent) => void;
+  onAdClose?: (event: FeedAdEvent) => void;
+  onAdClick?: (event: FeedAdEvent) => void;
+}
+
+export interface FeedAdEvent {
+  message?: string;
+  width?: number;
+  height?: number;
+  reason?: string;
 }
 
 const LINKING_ERROR =

@@ -1,7 +1,11 @@
 import { NativeModules, Platform } from 'react-native';
 const { AdManager } = NativeModules;
 
-type appInfo = {
+const init = (info: AppInfo): Promise<boolean | string> => {
+  return AdManager.init(info);
+};
+
+type AppInfo = {
   appid: string;
   app?: string | null; //app名称
   uid?: string | null; //有些uid和穿山甲商务有合作的需要
@@ -10,17 +14,12 @@ type appInfo = {
   debug?: boolean;
 };
 
-const init = (appInfo: appInfo): Promise<Boolean | string> => {
-  return AdManager.init(appInfo);
-};
-
-type feedInfo = {
-  appid: string;
+type FeedInfo = {
   codeid: string;
-  adWidth?: string;
+  adWidth?: number | string;
 };
 
-const loadFeedAd = (info: feedInfo) => {
+const loadFeedAd = (info: FeedInfo) => {
   //提前加载信息流FeedAd, 结果返回promise
   return AdManager.loadFeedAd(info);
 };
@@ -31,14 +30,14 @@ const loadFeedAd = (info: feedInfo) => {
  * @param info - 广告配置信息
  * @returns Promise<void>
  */
-const preloadFeedAd = (info: feedInfo): Promise<void> => {
+const preloadFeedAd = (info: FeedInfo): Promise<void> => {
   if (Platform.OS === 'android') {
     return AdManager.preloadFeedAd(info);
   }
   return Promise.resolve();
 };
 
-const loadDrawFeedAd = (info: feedInfo) => {
+const loadDrawFeedAd = (info: FeedInfo) => {
   //提前加载视频刷信息流DrawFeedAd, 无返回，暂时只写完android
   if (Platform.OS === 'android') {
     return AdManager.loadDrawFeedAd(info);

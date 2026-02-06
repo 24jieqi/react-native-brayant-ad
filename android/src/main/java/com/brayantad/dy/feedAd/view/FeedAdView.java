@@ -42,6 +42,7 @@ public class FeedAdView extends RelativeLayout {
   private int _expectedHeight = 0; // 高度0 自适应
   private final long startTime = 0;
   private boolean mHasShowDownloadActive = false;
+  private boolean mIsAdLoading = false;
 
   // 当前展示的广告实例，用于资源释放
   private TTNativeExpressAd mCurrentAd;
@@ -81,6 +82,30 @@ public class FeedAdView extends RelativeLayout {
       // 广告宽度未设置或 code id 未设置，停止显示广告
       return;
     }
+    if (mIsAdLoading) {
+      return;
+    }
+    if (DyADCore.TTAdSdk == null) {
+      onAdError("TTAdSdk not initialized");
+      return;
+    }
+    Activity activity = mContext != null ? mContext : reactContext.getCurrentActivity();
+    if (activity == null) {
+      onAdError("Activity not ready");
+      return;
+    }
+    mContext = activity;
+    mIsAdLoading = true;
+
+    TTNativeExpressAd cachedAd = DyADCore.consumeFeedAd(_codeid);
+    if (cachedAd != null) {
+      if (mCurrentAd != null) {
+        mCurrentAd.destroy();
+      }
+      mCurrentAd = cachedAd;
+      _showTTAd(cachedAd);
+      return;
+    }
     // 信息流广告原来不能提前预加载，很容易出现超时，必须当场加载
     // sdk里很容易出现 message send to dead thread ... 肯定有些资源线程依赖！
     runOnUiThread(
@@ -92,10 +117,6 @@ public class FeedAdView extends RelativeLayout {
 
   // 显示头条的信息流广告
   public void loadTTFeedAd() {
-    if (DyADCore.TTAdSdk == null) {
-      return;
-    }
-
     // 创建广告请求参数AdSlot,具体参数含义参考文档 modules.add(new Interaction(reactContext));
     adSlot =
       new AdSlot.Builder()
@@ -114,6 +135,7 @@ public class FeedAdView extends RelativeLayout {
 
         @Override
         public void onError(int code, String message) {
+          mIsAdLoading = false;
           message =
             "错误结果 loadNativeExpressAd onAdError: " + code + ", " + message;
           // TToast.show(getContext(), message);
@@ -125,11 +147,15 @@ public class FeedAdView extends RelativeLayout {
         public void onNativeExpressAdLoad(List<TTNativeExpressAd> ads) {
           Log.d(TAG, "onNativeExpressAdLoad: !!!");
           if (ads == null || ads.isEmpty()) {
+            mIsAdLoading = false;
             _this.onAdError("加载成功无广告内容");
             return;
           }
 
           TTNativeExpressAd ad = ads.get(0);
+          if (_this.mCurrentAd != null) {
+            _this.mCurrentAd.destroy();
+          }
           // 保存广告引用，用于后续销毁
           _this.mCurrentAd = ad;
           _showTTAd(ad);
@@ -140,7 +166,14 @@ public class FeedAdView extends RelativeLayout {
 
   // 显示广告
   private void _showTTAd(final TTNativeExpressAd ad) {
-    mContext.runOnUiThread(
+    Activity activity = mContext != null ? mContext : reactContext.getCurrentActivity();
+    if (activity == null) {
+      mIsAdLoading = false;
+      onAdError("Activity not ready");
+      return;
+    }
+    mContext = activity;
+    activity.runOnUiThread(
       () -> {
         bindAdListener(ad);
         ad.render();
@@ -173,14 +206,17 @@ public class FeedAdView extends RelativeLayout {
 
         @Override
         public void onRenderFail(View view, String msg, int code) {
+          mIsAdLoading = false;
           Log.d(TAG, "render fail:" + (System.currentTimeMillis() - startTime));
           _this.onAdError("加载成功 渲染失败 code:" + code);
         }
 
         @Override
         public void onRenderSuccess(View view, float width, float height) {
+          mIsAdLoading = false;
           RelativeLayout mExpressContainer = findViewById(R.id.feed_container);
           if (mExpressContainer != null) {
+            mExpressContainer.removeAllViews();
             mExpressContainer.addView(view);
           }
           FeedAdView.this.setVisibility(View.VISIBLE);
@@ -365,6 +401,7 @@ public class FeedAdView extends RelativeLayout {
    */
   public void destroy() {
     Log.d(TAG, "destroy: 释放广告资源");
+    mIsAdLoading = false;
     // 清空广告容器
     final RelativeLayout mExpressContainer = findViewById(R.id.feed_container);
     if (mExpressContainer != null) {
@@ -377,5 +414,11 @@ public class FeedAdView extends RelativeLayout {
     }
     // 移除所有子视图
     removeAllViews();
+  }
+
+  @Override
+  protected void onDetachedFromWindow() {
+    super.onDetachedFromWindow();
+    destroy();
   }
 }
