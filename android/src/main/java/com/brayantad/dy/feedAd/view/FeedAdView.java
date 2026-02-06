@@ -417,8 +417,9 @@ public class FeedAdView extends RelativeLayout {
   }
 
   @Override
-  protected void onDetachedFromWindow() {
-    super.onDetachedFromWindow();
-    destroy();
+  protected void onAttachedToWindow() {
+    super.onAttachedToWindow();
+    // 路由切换后重新挂载时，主动触发一次加载
+    showAd();
   }
 }

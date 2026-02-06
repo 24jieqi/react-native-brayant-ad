@@ -7,6 +7,7 @@
 //
 
 #import <UIKit/UIKit.h>
+#import <React/RCTComponent.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -15,6 +16,10 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy, nullable) NSString *codeid;
 @property (nonatomic, strong, nullable) NSNumber *adWidth;
 @property (nonatomic, assign) BOOL visible;
+@property (nonatomic, copy, nullable) RCTBubblingEventBlock onAdError;
+@property (nonatomic, copy, nullable) RCTBubblingEventBlock onAdLayout;
+@property (nonatomic, copy, nullable) RCTBubblingEventBlock onAdClick;
+@property (nonatomic, copy, nullable) RCTBubblingEventBlock onAdClose;
 
 @end
 

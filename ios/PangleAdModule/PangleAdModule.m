@@ -48,88 +48,62 @@ void Zhiya_notifyAdClosed(void);
 
 @interface PangleAdModule ()
 
-@property(nonatomic, assign) BOOL pendingAdClosedEvent;
 @property(nonatomic, assign) BOOL hasListeners;
 
 @end
 
 @implementation PangleAdModule
 
+static __weak PangleAdModule *sCurrentInstance = nil;
+static BOOL sPendingSplashAdClosedEvent = NO;
+
 + (instancetype)sharedInstance {
-  static PangleAdModule *instance = nil;
-  static dispatch_once_t onceToken;
-  dispatch_once(&onceToken, ^{
-    instance = [[PangleAdModule alloc] init];
-  });
-  return instance;
+  if (sCurrentInstance) {
+    return sCurrentInstance;
+  }
+  return [[PangleAdModule alloc] init];
 }
 
 - (instancetype)init {
   self = [super init];
   if (self) {
-    _pendingAdClosedEvent = NO;
-    [self setupNotificationListeners];
+    sCurrentInstance = self;
   }
   return self;
 }
 
 - (void)dealloc {
-  [self removeNotificationListeners];
-}
-
-- (void)setupNotificationListeners {
-  [[NSNotificationCenter defaultCenter]
-      addObserver:self
-         selector:@selector(handleNotification:)
-             name:@"PangleExpressNativeAdLoaded"
-           object:nil];
-  [[NSNotificationCenter defaultCenter]
-      addObserver:self
-         selector:@selector(handleNotification:)
-             name:@"PangleExpressNativeAdLoadFail"
-           object:nil];
-  [[NSNotificationCenter defaultCenter]
-      addObserver:self
-         selector:@selector(handleNotification:)
-             name:@"PangleExpressNativeAdRenderSuccess"
-           object:nil];
-  [[NSNotificationCenter defaultCenter]
-      addObserver:self
-         selector:@selector(handleNotification:)
-             name:@"PangleExpressNativeAdClicked"
-           object:nil];
-  [[NSNotificationCenter defaultCenter]
-      addObserver:self
-         selector:@selector(handleNotification:)
-             name:@"PangleExpressNativeAdClosed"
-           object:nil];
-}
-
-- (void)removeNotificationListeners {
   [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 - (void)handleNotification:(NSNotification *)notification {
   NSString *eventName = notification.name;
   id body = notification.object;
-  [self sendEventWithName:eventName body:body];
+  if (self.hasListeners) {
+    [self sendEventWithName:eventName body:body];
+    return;
+  }
+
+  if ([eventName isEqualToString:@"PangleSplashAdClosed"]) {
+    sPendingSplashAdClosedEvent = YES;
+  }
 }
 
 - (void)notifyAdClosed {
   dispatch_async(dispatch_get_main_queue(), ^{
     Zhiya_notifyAdClosed();
 
-    if (self.bridge != nil) {
+    if (self.bridge != nil && self.hasListeners) {
       [self sendEventWithName:@"PangleSplashAdClosed" body:nil];
     } else {
-      self.pendingAdClosedEvent = YES;
+      sPendingSplashAdClosedEvent = YES;
     }
   });
 }
 
 RCT_EXPORT_METHOD(flushPendingAdClosedEvent) {
-  if (self.pendingAdClosedEvent && self.bridge != nil) {
-    self.pendingAdClosedEvent = NO;
+  if (sPendingSplashAdClosedEvent && self.bridge != nil && self.hasListeners) {
+    sPendingSplashAdClosedEvent = NO;
     [self sendEventWithName:@"PangleSplashAdClosed" body:nil];
   }
 }
@@ -161,7 +135,6 @@ RCT_EXPORT_METHOD(flushPendingAdClosedEvent) {
     PangleFeedAdError,
     PangleFeedAdLayout,
   ];
-  ];
 }
 
 - (void)startObserving {
@@ -174,6 +147,11 @@ RCT_EXPORT_METHOD(flushPendingAdClosedEvent) {
            selector:@selector(handleNotification:)
                name:event
              object:nil];
+  }
+
+  if (sPendingSplashAdClosedEvent) {
+    sPendingSplashAdClosedEvent = NO;
+    [self sendEventWithName:@"PangleSplashAdClosed" body:nil];
   }
 }
 

@@ -41,7 +41,6 @@ extern NSString * const PangleFeedAdLayout;
 + (instancetype)sharedInstance;
 - (NSArray<NSString *> *)supportedEvents;
 - (void)notifyAdClosed;
-- (void)flushPendingAdClosedEvent;
 
 @end
 

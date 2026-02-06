@@ -5,7 +5,7 @@
  */
 import { NativeModules, NativeEventEmitter } from 'react-native';
 import type { EventSubscription } from 'react-native';
-const { SplashAd } = NativeModules;
+const { SplashAd, PangleAdModule } = NativeModules;
 
 export interface AD_EVENT_TYPE {
   onAdError: string; // 广告加载失败监听
@@ -37,6 +37,60 @@ export interface HAS_PRELOADED_RESULT_TYPE {
 }
 
 const dyLoadSplashAd = ({ codeid, anim = 'default' }: SPLASHAD_PROPS_TYPE) => {
+  if (PangleAdModule && !SplashAd) {
+    const eventEmitter = new NativeEventEmitter(PangleAdModule);
+    const listenerCache: Record<string, EventSubscription | undefined> = {};
+
+    const result = (async () => {
+      PangleAdModule.loadSplashAd(codeid);
+
+      const maxRetry = 30;
+      for (let i = 0; i < maxRetry; i += 1) {
+        const ready = await PangleAdModule.isSplashAdReady();
+        if (ready) {
+          return PangleAdModule.showSplashAd();
+        }
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 100);
+        });
+      }
+      throw new Error('开屏广告加载超时');
+    })();
+
+    return {
+      result,
+      subscribe: (
+        type: keyof AD_EVENT_TYPE,
+        callback: (event: any) => void
+      ) => {
+        if (listenerCache[type]) {
+          listenerCache[type]?.remove();
+        }
+
+        if (type === 'onAdClose') {
+          return (listenerCache[type] = eventEmitter.addListener(
+            'PangleSplashAdClosed',
+            (event: any) => {
+              callback(event);
+            }
+          ));
+        }
+
+        return {
+          remove: () => {},
+        };
+      },
+      cleanup: () => {
+        Object.values(listenerCache).forEach((subscription) => {
+          subscription?.remove();
+        });
+        Object.keys(listenerCache).forEach((key) => {
+          delete listenerCache[key];
+        });
+      },
+    };
+  }
+
   const eventEmitter = new NativeEventEmitter(SplashAd);
   // Per-instance listener cache to avoid conflicts with multiple ads
   const listenerCache: Record<string, EventSubscription | undefined> = {};
@@ -75,7 +129,16 @@ const dyLoadSplashAd = ({ codeid, anim = 'default' }: SPLASHAD_PROPS_TYPE) => {
  * @param options 预加载选项
  * @returns Promise<预加载结果>
  */
-const preloadSplashAd = async (options: PRELOAD_OPTIONS_TYPE): Promise<PRELOAD_RESULT_TYPE> => {
+const preloadSplashAd = async (
+  options: PRELOAD_OPTIONS_TYPE
+): Promise<PRELOAD_RESULT_TYPE> => {
+  if (PangleAdModule && !SplashAd) {
+    PangleAdModule.loadSplashAd(options.codeid);
+    return {
+      success: true,
+      message: 'iOS 已触发开屏广告加载',
+    };
+  }
   return SplashAd.preloadSplashAd(options);
 };
 
@@ -84,6 +147,13 @@ const preloadSplashAd = async (options: PRELOAD_OPTIONS_TYPE): Promise<PRELOAD_R
  * @returns Promise<检查结果>
  */
 const hasPreloadedSplashAd = async (): Promise<HAS_PRELOADED_RESULT_TYPE> => {
+  if (PangleAdModule && !SplashAd) {
+    const hasAd = await PangleAdModule.isSplashAdReady();
+    return {
+      hasAd,
+      status: hasAd ? 1 : 0,
+    };
+  }
   return SplashAd.hasPreloadedAd();
 };
 
@@ -91,6 +161,9 @@ const hasPreloadedSplashAd = async (): Promise<HAS_PRELOADED_RESULT_TYPE> => {
  * 清除预加载的广告缓存
  */
 const clearPreloadedSplashAd = (): void => {
+  if (PangleAdModule && !SplashAd) {
+    return;
+  }
   SplashAd.clearPreloadedAd();
 };
 

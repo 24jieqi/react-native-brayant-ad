@@ -1,967 +1,323 @@
 # react-native-brayant-ad
 
-接入穿山甲SDK
+React Native 国内广告 SDK 封装，当前主要集成穿山甲（Pangle），支持以下能力：
 
-## 后期代办
+- 开屏广告（支持预加载）
+- 激励视频
+- 全屏视频
+- 信息流 Feed（组件）
+- Draw 信息流（组件）
+- Banner（组件）
 
-接入GeoMoreSdk
+## 1. 安装
 
-## 安装
-
-```sh
-
-npm install @24jieqi/react-native-brayant-ad
+```bash
+pnpm add @24jieqi/react-native-brayant-ad
+# 或
+npm i @24jieqi/react-native-brayant-ad
+# 或
+yarn add @24jieqi/react-native-brayant-ad
 ```
 
-在RN项目的 Project级别的 build.gradle 中添加如下配置 （android/build.gradle）
+### iOS
+
+安装依赖后执行：
+
+```bash
+cd ios && pod install
+```
+
+## 2. 原生配置
+
+### 2.1 Android 仓库配置（必须）
+
+在宿主 App 的 `android/build.gradle`（或你项目的统一仓库配置处）确保包含：
 
 ```groovy
 allprojects {
   repositories {
     google()
     mavenCentral()
-    // 添加穿山甲SDK仓库
-    maven {
-      url 'https://artifact.bytedance.com/repository/pangle'
-    }
+    maven { url 'https://artifact.bytedance.com/repository/pangle' }
   }
 }
 ```
 
-### Android 完整集成配置
+### 2.2 iOS 隐私权限（建议）
 
-由于本库底层使用穿山甲（Pangle）SDK，需要在 Android 项目中添加以下配置才能正常使用。
+如果你计划在 iOS 调用 `requestPermission()` 请求 ATT，请在 `Info.plist` 配置 `NSUserTrackingUsageDescription`。
 
-#### 添加 Pangle SDK 依赖
+## 3. 能力与平台支持
 
-在你的 **android/build.gradle** 的 `dependencies` 中添加：
+| 能力 | 导出名 | Android | iOS |
+| --- | --- | --- | --- |
+| SDK 初始化 | `init` | ✅ | ✅ |
+| ATT/权限请求 | `requestPermission` | ✅（Android 权限） | ✅（ATT） |
+| 开屏广告 | `dyLoadSplashAd` | ✅ | ✅ |
+| 开屏预加载 | `preloadSplashAd` / `hasPreloadedSplashAd` / `clearPreloadedSplashAd` | ✅ | ✅（兼容实现） |
+| 激励视频 | `startRewardVideo` | ✅ | ✅ |
+| 全屏视频 | `startFullScreenVideo` | ✅ | ✅ |
+| Feed 信息流组件 | `FeedAdView` | ✅ | ✅ |
+| Draw 信息流组件 | `DrawFeedView` / `loadDrawFeedAd` | ✅ | ❌ |
+| Banner 组件 | `BannerAdView` | ✅ | ❌ |
 
-```groovy
-dependencies {
-    implementation 'com.pangle.cn:ads-sdk-pro:7.3.0.8'
-}
-```
+## 4. 快速开始（推荐接入顺序）
 
-## 必要配置
+### 4.1 初始化 SDK
 
-在项目入口文件中初始化init, 如果不是全局初始化的就需要在每次调用的时候传入
+建议在 App 启动时调用一次：
 
-```js
+```tsx
 import { init } from '@24jieqi/react-native-brayant-ad';
 
-useEffect(() => {
-  init({
-    appid: 'xxxx',
-    app: 'app名称',
-    amount: 1000,
-    reward: '金币',
-    debug: true,
-  }).then((res) => {});
+await init({
+  appid: '你的穿山甲 appid',
+  app: '你的应用名',
+  uid: '可选用户ID',
+  amount: 1000,
+  reward: '金币',
+  debug: false,
 });
 ```
 
-### init 方法配置
+`init` 参数：
 
-| 参数   | 说明                            | 类型    | 默认值        | 是否必填 |
-| ------ | ------------------------------- | ------- | ------------- | -------- |
-| appid  | 穿山甲中创建应用的appid         | string  | -             | 是       |
-| app    | app名称                         | string  | 穿山甲媒体APP | 否       |
-| uid    | 有些uid和穿山甲商务有合作的需要 | string  | -             | 否       |
-| amount | 奖励数量                        | number  | 1000          | 否       |
-| reward | 奖励名称                        | string  | 金币          | 否       |
-| debug  | 是否是开发者模式                | boolean | false         | 否       |
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `appid` | `string` | 是 | 穿山甲应用 ID |
+| `app` | `string` | 否 | 应用名 |
+| `uid` | `string` | 否 | 业务侧用户标识 |
+| `amount` | `number` | 否 | 激励数量 |
+| `reward` | `string` | 否 | 激励名称 |
+| `debug` | `boolean` | 否 | 调试模式 |
 
-init 成功会返回一个promise
+### 4.2 请求权限（按需）
 
-# 1. 开屏广告
+```tsx
+import { requestPermission } from '@24jieqi/react-native-brayant-ad';
 
-## API
-
-### dyLoadSplashAd
-
-#### 开屏广告事件类型
-
-```ts
-interface AD_EVENT_TYPE {
-  onAdError: string; // 广告加载失败监听
-  onAdClick: string; // 广告被点击监听
-  onAdClose: string; // 广告关闭
-  onAdSkip: string; // 用户点击跳过广告监听
-  onAdShow: string; // 开屏广告开始展示
-}
-
-EmuAnim = 'default' | 'none' | 'catalyst' | 'slide' | 'fade';
+requestPermission();
 ```
 
-| 参数   | 说明         | 类型    | 默认值  | 是否必填 |
-| ------ | ------------ | ------- | ------- | -------- |
-| codeid | 广告位id     | string  | -       | 是       |
-| anim   | 广告进入方式 | EmuAnim | default | 否       |
+- Android：请求相关权限
+- iOS：请求 ATT
 
-### preloadSplashAd (Android 推荐)
+## 5. 开屏广告
 
-**Android 端推荐使用预加载方式，可避免启动页结束后出现白屏。**
+### 5.1 API
 
-在应用启动时（init 之后）预加载开屏广告，展示时直接使用已加载的广告。
-
-```ts
-// 预加载开屏广告
-await preloadSplashAd({ codeid: 'your_code_id' });
-
-// 展示广告（使用预加载的广告，无白屏）
-const splashAd = dyLoadSplashAd({ codeid: 'your_code_id' });
+```tsx
+import {
+  dyLoadSplashAd,
+  preloadSplashAd,
+  hasPreloadedSplashAd,
+  clearPreloadedSplashAd,
+} from '@24jieqi/react-native-brayant-ad';
 ```
 
-| 参数   | 说明     | 类型   | 默认值 | 是否必填 |
-| ------ | -------- | ------ | ------ | -------- |
-| codeid | 广告位id | string | -      | 是       |
+`dyLoadSplashAd({ codeid, anim? })`
 
-### hasPreloadedSplashAd
+- `codeid: string` 必填
+- `anim?: 'default' | 'none' | 'catalyst' | 'slide' | 'fade'`
 
-检查是否有预加载的广告可用（Android）。
+返回对象：
 
-```ts
+- `result`: Promise
+- `subscribe(type, callback)`: 订阅事件
+- `cleanup()`: 移除当前实例所有监听
+
+事件类型：
+
+- `onAdError`
+- `onAdClick`
+- `onAdClose`
+- `onAdSkip`
+- `onAdShow`
+- `onPreloadSuccess`
+- `onPreloadFail`
+
+### 5.2 推荐：启动时预加载（尤其 Android）
+
+```tsx
+await preloadSplashAd({ codeid: '你的开屏广告位' });
+
 const { hasAd, status } = await hasPreloadedSplashAd();
-// hasAd: boolean - 是否有可用的预加载广告
-// status: number - 预加载状态 (0:未加载 1:加载中 2:成功 3:失败)
+// hasAd: 是否可直接展示
+// status: 预加载状态码
+
+if (hasAd) {
+  const splash = dyLoadSplashAd({ codeid: '你的开屏广告位' });
+  splash.subscribe('onAdClose', () => {});
+}
 ```
 
-### clearPreloadedSplashAd
+不再使用时可清理缓存：
 
-清除预加载的广告缓存（Android）。
-
-```ts
+```tsx
 clearPreloadedSplashAd();
 ```
 
-## 如何使用
-
-### 基础用法（实时加载）
-
-> 注意：这种方式在 Android 端可能会出现白屏
+## 6. 激励视频
 
 ```tsx
-import { dyLoadSplashAd } from '@24jieqi/react-native-brayant-ad';
-import { Text, TouchableOpacity } from 'react-native';
+import { startRewardVideo } from '@24jieqi/react-native-brayant-ad';
 
-const ScrenPage = () => {
-  const onOpenScren = () => {
-    const splashAd = dyLoadSplashAd({
-      codeid: '****',
-      anim: 'default',
-    });
+const reward = startRewardVideo({ codeid: '你的激励广告位' });
 
-    splashAd.subscribe('onAdClose', (event) => {
-      console.log('广告关闭', event);
-    });
+reward.result.then((res) => {
+  console.log('激励视频结果', res);
+});
 
-    splashAd.subscribe('onAdSkip', (i) => {
-      console.log('用户点击跳过监听', i);
-    });
+reward.subscribe('onAdLoaded', (e) => console.log('加载成功', e));
+reward.subscribe('onAdError', (e) => console.log('加载失败', e));
+reward.subscribe('onAdClick', (e) => console.log('点击', e));
+reward.subscribe('onAdClose', (e) => console.log('关闭', e));
 
-    splashAd.subscribe('onAdError', (e) => {
-      console.log('开屏加载失败监听', e);
-    });
-
-    splashAd.subscribe('onAdClick', (e) => {
-      console.log('开屏被用户点击了', e);
-    });
-
-    splashAd.subscribe('onAdShow', (e) => {
-      console.log('开屏开始展示', e);
-    });
-  };
-
-  return (
-    <TouchableOpacity onPress={onOpenScren}>
-      <Text style={{ textAlign: 'center' }}> 开屏</Text>
-    </TouchableOpacity>
-  );
-};
+// 页面销毁时
+reward.cleanup();
 ```
 
-### 推荐用法（预加载 - Android）
+支持事件：`onAdError`、`onAdLoaded`、`onAdClick`、`onAdClose`。
 
-**Android 端推荐使用预加载方式，避免启动页到广告之间出现白屏。**
+## 7. 全屏视频
 
 ```tsx
-import {
-  init,
-  preloadSplashAd,
-  hasPreloadedSplashAd,
-  dyLoadSplashAd,
-} from '@24jieqi/react-native-brayant-ad';
-import { useEffect } from 'react';
+import { startFullScreenVideo } from '@24jieqi/react-native-brayant-ad';
 
-const App = () => {
-  useEffect(() => {
-    const initialize = async () => {
-      // 1. 初始化 SDK
-      await init({
-        appid: 'your_app_id',
-        app: '应用名称',
-        debug: false,
-      });
+const full = startFullScreenVideo({
+  codeid: '你的全屏广告位',
+  orientation: 'VERTICAL', // 可选：HORIZONTAL | VERTICAL
+  provider: '头条', // 可选：头条 | 腾讯 | 快手（主要 Android 使用）
+});
 
-      // 2. Android: 预加载开屏广告（避免白屏）
-      if (Platform.OS === 'android') {
-        await preloadSplashAd({ codeid: 'your_splash_code_id' });
-        console.log('开屏广告预加载完成');
-      }
-    };
+full.result.then((res) => {
+  console.log('全屏视频结果', res);
+});
 
-    initialize();
-  }, []);
+full.subscribe('onAdLoaded', () => {});
+full.subscribe('onAdError', () => {});
+full.subscribe('onAdClick', () => {});
+full.subscribe('onAdClose', () => {});
 
-  // 3. 展示开屏广告（Android使用预加载，iOS实时加载）
-  const showSplash = async () => {
-    // 检查预加载状态（可选）
-    if (Platform.OS === 'android') {
-      const { hasAd } = await hasPreloadedSplashAd();
-      console.log('是否有预加载广告:', hasAd);
-    }
-
-    const splashAd = dyLoadSplashAd({
-      codeid: 'your_splash_code_id',
-      anim: 'default',
-    });
-
-    splashAd.subscribe('onAdShow', (event) => {
-      console.log('广告展示', event);
-    });
-
-    splashAd.subscribe('onAdClose', (event) => {
-      console.log('广告关闭', event);
-    });
-
-    splashAd.subscribe('onAdError', (error) => {
-      console.log('广告错误', error);
-    });
-  };
-
-  return (
-    // ...
-  );
-};
+// 页面销毁时
+full.cleanup();
 ```
 
-### 在应用启动时自动展示开屏广告
-
-```tsx
-import { init, preloadSplashAd, dyLoadSplashAd } from '@24jieqi/react-native-brayant-ad';
-import { hide } from 'react-native-bootsplash';
-
-const SplashAdManager = () => {
-  useEffect(() => {
-    const showSplashAdOnLaunch = async () => {
-      try {
-        // 1. 初始化广告 SDK
-        await init({ appid: 'your_app_id', app: '应用名称' });
-
-        // 2. Android: 预加载广告
-        if (Platform.OS === 'android') {
-          await preloadSplashAd({ codeid: 'your_splash_code_id' });
-        }
-
-        // 3. 展示广告（Android使用预加载，无白屏）
-        const splashAd = dyLoadSplashAd({
-          codeid: 'your_splash_code_id',
-          anim: 'fade',
-        });
-
-        splashAd.subscribe('onAdShow', () => {
-          console.log('广告展示');
-          // Android: 此时可以隐藏启动页（广告已准备好）
-          hide({ fade: true });
-        });
-
-        splashAd.subscribe('onAdClose', () => {
-          console.log('广告关闭');
-        });
-
-        splashAd.subscribe('onAdError', (error) => {
-          console.log('广告加载失败', error);
-          // 出错时也要隐藏启动页
-          hide({ fade: true });
-        });
-      } catch (error) {
-        console.error('广告初始化失败:', error);
-        hide({ fade: true });
-      }
-    };
-
-    showSplashAdOnLaunch();
-  }, []);
-
-  return null;
-};
-```
-
-# 2. 激励视频
-
-## API
-
-### requestPermission
-
-> 主动看激励视频时，才检查这个权限
-
-无参数 `requestPermission()`
-
-### startRewardVideo 方法参数
-
-> 开始看激励视频
-
-## API
-
-| 参数   | 说明     | 类型   | 默认值 | 是否必填 |
-| ------ | -------- | ------ | ------ | -------- |
-| codeid | 广告位id | string | -      | 是       |
-
-#### 激励视频事件类型
-
-```ts
-export enum AD_EVENT_TYPE {
-  onAdError = 'onAdError', // 广告加载失败监听
-  onAdLoaded = 'onAdLoaded', // 广告加载成功监听
-  onAdClick = 'onAdClick', // 广告被点击监听
-  onAdClose = 'onAdClose', // 广告关闭监听
-}
-```
-
-## 如何使用
-
-> 这边案列默认全部init初始化后
-
-```tsx
-import {
-  requestPermission,
-  startRewardVideo,
-} from '@24jieqi/react-native-brayant-ad';
-import { Text, TouchableOpacity } from 'react-native';
-
-const RewardVideoPage = () => {
-  const onStartRewardVideo = () => {
-    const rewardVideo = startRewardVideo({
-      codeid: '****',
-    });
-
-    rewardVideo.result.then((val: any) => {
-      console.log('RewardVideo 回调结果', val);
-    });
-
-    rewardVideo.subscribe('onAdLoaded', (event) => {
-      console.log('广告加载成功监听', event);
-    });
-
-    rewardVideo.subscribe('onAdError', (event) => {
-      console.log('广告加载失败监听', event);
-    });
-
-    rewardVideo.subscribe('onAdClose', (event) => {
-      console.log('广告被关闭监听', event);
-    });
-
-    rewardVideo.subscribe('onAdClick', (event) => {
-      console.log('广告点击查看详情监听', event);
-    });
-  };
-
-  return (
-    <TouchableOpacity onPress={onStartRewardVideo}>
-      <Text style={{ textAlign: 'center' }}> 激励视频</Text>
-    </TouchableOpacity>
-  );
-};
-```
-
-# 3. 全屏视频广告
-
-## api
-
-### startFullScreenVideo 方法参数
-
-| 参数        | 说明     | 类型                       | 默认值   | 是否必填 |
-| ----------- | -------- | -------------------------- | -------- | -------- | --- | --- |
-| codeid      | 广告位id | string                     | -        | 是       |
-| orientation | 竖屏横屏 | 'HORIZONTAL' \| 'VERTICAL' | VERTICAL | 否       | -   | 是  |
-
-## 使用
-
-```tsx
-import {
-  requestPermission,
-  startFullScreenVideo,
-} from '@24jieqi/react-native-brayant-ad';
-import { useEffect } from 'react';
-import { Text, TouchableOpacity } from 'react-native';
-
-const RewardVideoPage = () => {
-  useEffect(() => {
-    // step 1: 获取权限
-    requestPermission();
-  }, []);
-
-  return (
-    <TouchableOpacity
-      style={{
-        marginVertical: 20,
-        paddingHorizontal: 30,
-        paddingVertical: 15,
-        backgroundColor: '#F96',
-        borderRadius: 50,
-      }}
-      onPress={() => {
-        let fullVideo = startFullScreenVideo({
-          codeid: '****',
-        });
-        console.log('FullVideoAd rs:', fullVideo);
-        fullVideo.result?.then((val: any) => {
-          console.log('FullVideoAd rs then val', val);
-        });
-
-        fullVideo.subscribe('onAdLoaded' as any, (event) => {
-          console.log('广告加载成功监听', event);
-        });
-
-        fullVideo.subscribe('onAdError' as any, (event) => {
-          console.log('广告加载失败监听', event);
-        });
-
-        fullVideo.subscribe('onAdClose' as any, (event) => {
-          console.log('广告被关闭监听', event);
-        });
-
-        fullVideo.subscribe('onAdClick' as any, (event) => {
-          console.log('广告点击查看详情监听', event);
-        });
-      }}
-    >
-      <Text style={{ textAlign: 'center' }}> Start 全屏视频广告</Text>
-    </TouchableOpacity>
-  );
-};
-```
-
-# 4. Draw广告
-
-## api
-
-### loadDrawFeedAd 方法参数
-
-| 参数   | 说明     | 类型   | 默认值 | 是否必填 |
-| ------ | -------- | ------ | ------ | -------- | --- | --- |
-| codeid | 广告位id | string | -      | 是       |
-| appid  | 应用id   | string | -      | 是       | -   | 是  |
-
-## 组件
-
-### DrawFeedView
-
-| 参数      | 说明               | 类型      | 默认值 | 是否必填 |
-| --------- | ------------------ | --------- | ------ | -------- |
-| codeid    | 广告位id           | string    | -      | 是       |
-| appid     | 应用id             | string    | -      | 是       |
-| visible   | 是否显示组件中广告 | boolean   | -      | 否       |
-| appid     | 应用id             | string    | -      | 是       |
-| style     | 组件样式           | ViewStyle | -      | 否       |
-| onAdError | 广告错误事件       | Function  | -      | 否       |
-| onAdShow  | 显示广告事件       | Function  | -      | 否       |
-| onAdClick | 点击广告事件       | Function  | -      | 否       |
-
-## 使用
-
-```tsx
-import { loadDrawFeedAd, DrawFeedView } from '@24jieqi/react-native-brayant-ad';
-import { useEffect } from 'react';
-
-const RewardVideoPage = () => {
-  useEffect(() => {
-    loadDrawFeedAd({
-      appid: '****',
-      codeid: '****',
-    });
-  }, []);
-
-  return (
-    <DrawFeedView
-      codeid={'****'}
-      appid={'****'}
-      visible={true}
-      onAdError={(e: any) => {
-        console.log('DrawFeedAd 加载失败', e);
-      }}
-      onAdShow={(e: any) => {
-        console.log('DrawFeedAd 开屏开始展示', e);
-      }}
-      onAdClick={(e: any) => {
-        console.log('onAdClick DrawFeed', e.nativeEvent);
-      }}
-    />
-  );
-};
-```
-
-# 5. Banner广告
-
-> 注意：Banner广告目前仅支持Android平台
-
-## API
-
-### preloadBannerAd
-
-预加载 Banner 广告（Android 专用）
-
-在组件渲染前调用，提前加载广告数据，减少白屏时间。预加载的广告会缓存 5 分钟，过期后自动失效。
-
-| 参数     | 说明         | 类型   | 默认值 | 是否必填 |
-| -------- | ------------ | ------ | ------ | -------- |
-| codeid   | 广告位 ID    | string | -      | 是       |
-| adWidth  | 广告宽度(dp) | number | 320    | 否       |
-| adHeight | 广告高度(dp) | number | 50     | 否       |
-
-```tsx
-import { NativeModules } from 'react-native';
-const { BannerAdModule } = NativeModules;
-
-// 在页面进入前预加载
-useEffect(() => {
-  BannerAdModule.preloadBannerAd({
-    codeid: 'your_codeid',
-    adWidth: 320,
-    adHeight: 50,
-  });
-}, []);
-```
-
-### hasPreloadedBannerAd
-
-检查是否有预加载的 Banner 广告
-
-```tsx
-const hasCache = await BannerAdModule.hasPreloadedBannerAd('your_codeid');
-```
-
-### clearPreloadedBannerAd
-
-清除预加载的 Banner 广告缓存
-
-```tsx
-BannerAdModule.clearPreloadedBannerAd();
-```
-
-## 组件
-
-### BannerAdView
-
-| 参数              | 说明               | 类型      | 默认值 | 是否必填 |
-| ----------------- | ------------------ | --------- | ------ | -------- |
-| codeid            | 广告位id           | string    | -      | 是       |
-| adWidth           | 广告宽度(dp)       | number    | 320    | 否       |
-| adHeight          | 广告高度(dp)       | number    | 50     | 否       |
-| visible           | 是否显示组件中广告 | boolean   | -      | 否       |
-| style             | 组件样式           | ViewStyle | -      | 否       |
-| onAdRenderSuccess | 广告渲染成功事件   | Function  | -      | 否       |
-| onAdError         | 广告加载失败事件   | Function  | -      | 否       |
-| onAdDismiss       | 广告关闭事件       | Function  | -      | 否       |
-| onAdClick         | 广告被用户点击事件 | Function  | -      | 否       |
-| onAdShow          | 广告展示事件       | Function  | -      | 否       |
-| onAdDislike       | 用户不感兴趣事件   | Function  | -      | 否       |
-
-## 使用
-
-### 基础用法
-
-```tsx
-import { BannerAdView, init } from '@24jieqi/react-native-brayant-ad';
-import { useEffect, useState } from 'react';
-import { View } from 'react-native';
-
-const BannerAdPage = () => {
-  const [showBannerView, setShowBannerView] = useState(false);
-
-  useEffect(() => {
-    init({
-      appid: '****',
-      app: '设备信息',
-    }).then((res) => {
-      setShowBannerView(true);
-    });
-  }, []);
-
-  return (
-    <View>
-      <BannerAdView
-        codeid={'****'}
-        adWidth={320}
-        adHeight={50}
-        visible={showBannerView}
-        onAdRenderSuccess={(data: any) => {
-          console.log('Banner 广告渲染成功！', data);
-        }}
-        onAdError={(err: any) => {
-          console.log('Banner 广告加载失败！', err);
-        }}
-        onAdDismiss={(data: any) => {
-          console.log('Banner 广告关闭！', data);
-        }}
-        onAdClick={(val: any) => {
-          console.log('Banner 广告被用户点击！', val);
-        }}
-        onAdShow={(val: any) => {
-          console.log('Banner 广告展示', val);
-        }}
-        onAdDislike={(val: any) => {
-          console.log('Banner 用户不感兴趣', val);
-        }}
-      />
-    </View>
-  );
-};
-```
-
-### 推荐用法（预加载）
-
-```tsx
-import { BannerAdView } from '@24jieqi/react-native-brayant-ad';
-import { NativeModules } from 'react-native';
-import { useEffect, useState } from 'react';
-import { View } from 'react-native';
-
-const { BannerAdModule } = NativeModules;
-
-const BannerAdPage = () => {
-  const [showBannerView, setShowBannerView] = useState(false);
-
-  useEffect(() => {
-    // 先预加载广告，再显示组件
-    const preloadAndShow = async () => {
-      try {
-        await BannerAdModule.preloadBannerAd({
-          codeid: 'your_codeid',
-          adWidth: 320,
-          adHeight: 50,
-        });
-      } catch (error) {
-        console.log('预加载失败', error);
-      } finally {
-        // 无论预加载成功与否，都显示组件
-        setShowBannerView(true);
-      }
-    };
-
-    preloadAndShow();
-  }, []);
-
-  return (
-    <View>
-      <BannerAdView
-        codeid={'your_codeid'}
-        adWidth={320}
-        adHeight={50}
-        visible={showBannerView}
-        onAdRenderSuccess={(data: any) => {
-          console.log('Banner 广告渲染成功！', data);
-        }}
-        onAdError={(err: any) => {
-          console.log('Banner 广告加载失败！', err);
-        }}
-      />
-    </View>
-  );
-};
-```
-
-# 6. 信息流广告
-
-## API
-
-### preloadFeedAd
-
-预加载信息流广告（Android 专用）
-
-在组件渲染前调用，提前加载广告数据，减少白屏时间。
-
-| 参数    | 说明         | 类型   | 默认值 | 是否必填 |
-| ------- | ------------ | ------ | ------ | -------- |
-| appid   | 应用 ID      | string | -      | 是       |
-| codeid  | 广告位 ID    | string | -      | 是       |
-| adWidth | 广告宽度(dp) | string | '280'  | 否       |
-
-```tsx
-import { preloadFeedAd } from '@24jieqi/react-native-brayant-ad';
-
-// 在页面进入前预加载
-useEffect(() => {
-  preloadFeedAd({
-    appid: 'your_appid',
-    codeid: 'your_codeid',
-    adWidth: '375',
-  });
-}, []);
-```
-
-## 组件
-
-### FeedAdView
-
-| 参数       | 说明               | 类型      | 默认值 | 是否必填 |
-| ---------- | ------------------ | --------- | ------ | -------- |
-| codeid     | 广告位id           | string    | -      | 是       |
-| adWidth    | 广告宽度           | number    | 375    | 否       |
-| visible    | 是否显示组件中广告 | boolean   | -      | 否       |
-| style      | 组件样式           | ViewStyle | -      | 否       |
-| onAdLayout | 广告加载成功事件   | Function  | -      | 否       |
-| onAdClose  | 广告关闭事件       | Function  | -      | 否       |
-| onAdClick  | 广告被用户点击事件 | Function  | -      | 否       |
-| onAdError  | 广告加载失败事件   | Function  | -      | 否       |
-
-## 使用
-
-### 基础用法
-
-```tsx
-import { FeedAdView } from '@24jieqi/react-native-brayant-ad';
-import { useEffect, useState } from 'react';
-
-const RewardVideoPage = () => {
-  const [showFeedView, setShowFeedView] = useState(false);
-
-  useEffect(() => {
-    setShowFeedView(true);
-  }, []);
-
-  return (
-    <FeedAdView
-      codeid={'****'}
-      adWidth={400}
-      visible={showFeedView}
-      onAdLayout={(data: any) => {
-        console.log('Feed 广告加载成功！', data);
-      }}
-      onAdClose={(data: any) => {
-        console.log('Feed 广告关闭！', data);
-      }}
-      onAdError={(err: any) => {
-        console.log('Feed 广告加载失败！', err);
-      }}
-      onAdClick={(val: any) => {
-        console.log('Feed 广告被用户点击！', val);
-      }}
-    />
-  );
-};
-```
-
-### 推荐用法（预加载）
+## 8. Feed 信息流组件
 
 ```tsx
 import { FeedAdView, preloadFeedAd } from '@24jieqi/react-native-brayant-ad';
-import { useEffect, useState } from 'react';
 
-const RewardVideoPage = () => {
-  const [showFeedView, setShowFeedView] = useState(false);
+await preloadFeedAd({ codeid: '你的Feed广告位', adWidth: 375 });
 
-  // 页面进入时预加载广告
-  useEffect(() => {
-    preloadFeedAd({
-      appid: 'your_appid',
-      codeid: 'your_codeid',
-    }).then(() => {
-      // 预加载成功后显示组件
-      setShowFeedView(true);
-    });
-  }, []);
-
-  return (
-    <FeedAdView
-      codeid={'your_codeid'}
-      adWidth={375}
-      visible={showFeedView}
-      onAdLayout={(data: any) => {
-        console.log('Feed 广告加载成功！', data);
-      }}
-      onAdError={(err: any) => {
-        console.log('Feed 广告加载失败！', err);
-      }}
-    />
-  );
-};
-```
-
-### 在列表中使用不同广告位 ID
-
-当需要在列表中展示不同位置的广告时，可以通过传入不同的 `adId` 来实现（组件内部会根据 `adId` 自动映射到对应的广告位）：
-
-```tsx
-import { FeedAdView } from '@24jieqi/react-native-brayant-ad';
-import { FlatList, View, Text } from 'react-native';
-
-// 定义广告位池配置（可选，用于实现广告位轮询）
-const AD_SLOT_POOL = [
-  'your_codeid_1', // 第5位广告
-  'your_codeid_2', // 第10位广告
-];
-
-// 根据 adId 选择广告位（实现轮询逻辑）
-const getSlotIdByAdId = (adId: string): string => {
-  const index = adId
-    .split('')
-    .reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return AD_SLOT_POOL[index % AD_SLOT_POOL.length];
-};
-
-const ListPage = () => {
-  const renderItem = ({ item, index }: { item: any; index: number }) => {
-    // 在第5位和第10位插入广告
-    if (index === 5 || index === 10) {
-      // 生成唯一的 adId，例如：ad_5_1707123456789
-      const adId = `ad_${index}_${Date.now()}`;
-
-      return (
-        <>
-          {/* 正常列表项 */}
-          <View style={{ padding: 16 }}>
-            <Text>{item.title}</Text>
-          </View>
-          {/* 广告组件 - 使用 adId 作为唯一标识 */}
-          <FeedAdView
-            key={adId}  // 强制重新创建组件实例
-            codeid={getSlotIdByAdId(adId)}
-            adWidth={375}
-            visible={true}
-            onAdLayout={(data: any) => {
-              console.log(`位置 ${index} 广告加载成功！`, data);
-            }}
-            onAdError={(err: any) => {
-              console.log(`位置 ${index} 广告加载失败！`, err);
-            }}
-          />
-        </>
-      );
-    }
-
-    return (
-      <View style={{ padding: 16 }}>
-        <Text>{item.title}</Text>
-      </View>
-    );
-  };
-
-  return (
-    <FlatList
-      data={listData}
-      renderItem={renderItem}
-      keyExtractor={(item, index) => `item-${index}`}
-    />
-  );
-};
-```
-
-#### 封装 NativeAd 组件（推荐用法）
-
-为了更好的开发体验，建议封装一个 `NativeAd` 组件，对外暴露 `adId` 参数：
-
-```tsx
-import { FeedAdView, preloadFeedAd } from '@24jieqi/react-native-brayant-ad';
-import React, { useEffect, useState } from 'react';
-import { View } from 'react-native';
-
-interface NativeAdProps {
-  adId: string;        // 唯一广告标识，用于瀑布流场景
-  slotID?: string;     // 可选：指定广告位，不传则使用默认或轮询
-  style?: ViewStyle;
-  onAdLoaded?: Function;
-  onAdError?: Function;
-  onAdClick?: Function;
-  onAdClose?: Function;
-}
-
-// 广告位池配置
-const AD_SLOT_POOL = [
-  'your_codeid_for_position_5',
-  'your_codeid_for_position_10',
-];
-
-// 根据 adId 选择广告位（实现轮询）
-const getSlotIdByAdId = (adId: string): string => {
-  const index = adId
-    .split('')
-    .reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return AD_SLOT_POOL[index % AD_SLOT_POOL.length];
-};
-
-export const NativeAd: React.FC<NativeAdProps> = ({
-  adId,
-  slotID,
-  style,
-  onAdLoaded,
-  onAdError,
-  onAdClick,
-  onAdClose,
-}) => {
-  const [isReady, setIsReady] = useState(false);
-  const codeid = slotID || getSlotIdByAdId(adId);
-
-  useEffect(() => {
-    // 预加载广告
-    preloadFeedAd({ appid: 'your_appid', codeid })
-      .then(() => setIsReady(true))
-      .catch(() => setIsReady(true));
-  }, [codeid]);
-
-  if (!isReady) return null;
-
-  return (
-    <View style={style}>
-      <FeedAdView
-        key={adId}  // 关键：强制重新创建组件实例
-        codeid={codeid}
-        adWidth={375}
-        visible={true}
-        onAdLayout={(e) => onAdLoaded?.(e.nativeEvent)}
-        onAdError={(e) => onAdError?.(e.nativeEvent)}
-        onAdClick={(e) => onAdClick?.(e.nativeEvent)}
-        onAdClose={(e) => onAdClose?.(e.nativeEvent)}
-      />
-    </View>
-  );
-};
-
-export default NativeAd;
-```
-
-**使用封装的组件**：
-
-```tsx
-import { NativeAd } from './NativeAd';
-
-// 在列表中使用 - 只需传入 adId
-<FlatList
-  data={data}
-  renderItem={({ item, index }) => (
-    <View>
-      <Text>{item.title}</Text>
-      {/* 第5位和第10位插入不同广告 */}
-      {index === 5 && <NativeAd adId="ad_5_1707123456789" />}
-      {index === 10 && <NativeAd adId="ad_10_1707123456790" />}
-    </View>
-  )}
+<FeedAdView
+  codeid="你的Feed广告位"
+  adWidth={375}
+  visible={true}
+  onAdLayout={(e) => console.log('渲染成功', e)}
+  onAdError={(e) => console.log('加载失败', e)}
+  onAdClick={(e) => console.log('点击', e)}
+  onAdClose={(e) => console.log('关闭', e)}
 />
 ```
 
-**关键点说明**：
+`FeedAdView` 主要参数：
 
-| 参数 | 说明 | 示例 |
-|------|------|------|
-| `adId` | 唯一广告标识，用于区分不同位置的广告 | `ad_5_1707123456789` |
-| `key={adId}` | 强制 React 重新创建组件实例，确保每次展示不同广告 | - |
-| `getSlotIdByAdId` | 根据 `adId` 哈希计算选择广告位，实现轮询 | - |
-| `slotID` | 可选参数，直接指定广告位 ID | `your_codeid_1` |
+- `codeid: string`（必填）
+- `adWidth?: number`
+- `visible?: boolean`
+- `style?: ViewStyle`
+- `onAdLayout/onAdError/onAdClick/onAdClose`
 
-## License
+## 9. Draw 信息流组件（Android）
 
-MIT
+```tsx
+import { DrawFeedView, loadDrawFeedAd } from '@24jieqi/react-native-brayant-ad';
 
----
+loadDrawFeedAd({
+  appid: '你的 appid',
+  codeid: '你的 Draw 广告位',
+});
 
-Made with [create-react-native-library](https://github.com/callstack/react-native-builder-bob)
+<DrawFeedView
+  appid="你的 appid"
+  codeid="你的 Draw 广告位"
+  visible={true}
+  onAdShow={(e) => console.log('展示', e)}
+  onAdClick={(e) => console.log('点击', e)}
+  onAdError={(e) => console.log('错误', e)}
+/>
+```
+
+## 10. Banner 组件（Android）
+
+```tsx
+import { BannerAdView } from '@24jieqi/react-native-brayant-ad';
+
+<BannerAdView
+  codeid="你的 Banner 广告位"
+  adWidth={320}
+  adHeight={50}
+  visible={true}
+  onAdRenderSuccess={(e) => console.log('渲染成功', e)}
+  onAdError={(e) => console.log('加载失败', e)}
+  onAdShow={(e) => console.log('展示', e)}
+  onAdClick={(e) => console.log('点击', e)}
+  onAdDismiss={(e) => console.log('关闭', e)}
+  onAdDislike={(e) => console.log('不感兴趣', e)}
+/>
+```
+
+## 11. 导出清单
+
+```ts
+import {
+  init,
+  requestPermission,
+  loadFeedAd,
+  preloadFeedAd,
+  dyLoadSplashAd,
+  preloadSplashAd,
+  hasPreloadedSplashAd,
+  clearPreloadedSplashAd,
+  startRewardVideo,
+  startFullScreenVideo,
+  loadDrawFeedAd,
+  DrawFeedView,
+  FeedAdView,
+  BannerAdView,
+} from '@24jieqi/react-native-brayant-ad';
+```
+
+## 12. 常见问题
+
+### 12.1 提示模块未链接（`doesn't seem to be linked`）
+
+- 确认已重新编译 App（不是仅热更新）
+- iOS 确认执行过 `pod install`
+- 确认不是在 Expo Go 中运行
+
+### 12.2 Android 开屏后出现白屏
+
+优先使用 `preloadSplashAd` 在启动后预加载，再用 `dyLoadSplashAd` 展示。
+
+### 12.3 监听器重复触发
+
+每次创建广告实例后，在页面卸载时调用 `cleanup()`，并避免同一实例重复绑定同一事件。
+
+## 13. 本地开发
+
+```bash
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm prepare
+```
+
+如果你修改了库源码（`src/`），请先执行：
+
+```bash
+pnpm prepare
+```
+
+然后再运行示例工程。

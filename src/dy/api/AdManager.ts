@@ -1,8 +1,19 @@
 import { NativeModules, Platform } from 'react-native';
-const { AdManager } = NativeModules;
+const { AdManager, PangleAdModule } = NativeModules;
 
 const init = (info: AppInfo): Promise<boolean | string> => {
-  return AdManager.init(info);
+  if (Platform.OS === 'android') {
+    return AdManager.init(info);
+  }
+
+  if (Platform.OS === 'ios') {
+    if (!PangleAdModule) {
+      return Promise.reject(new Error('PangleAdModule 未注册'));
+    }
+    return PangleAdModule.initialize(info.appid).then(() => true);
+  }
+
+  return Promise.resolve(false);
 };
 
 type AppInfo = {
@@ -21,7 +32,20 @@ type FeedInfo = {
 
 const loadFeedAd = (info: FeedInfo) => {
   //提前加载信息流FeedAd, 结果返回promise
-  return AdManager.loadFeedAd(info);
+  if (Platform.OS === 'android') {
+    return AdManager.loadFeedAd(info);
+  }
+
+  if (Platform.OS === 'ios') {
+    if (!PangleAdModule) {
+      return Promise.reject(new Error('PangleAdModule 未注册'));
+    }
+    const width = Number(info.adWidth || 0);
+    PangleAdModule.loadExpressNativeAdWithAdSize(info.codeid, width, 0);
+    return Promise.resolve(true);
+  }
+
+  return Promise.resolve(true);
 };
 
 /**
@@ -33,6 +57,13 @@ const loadFeedAd = (info: FeedInfo) => {
 const preloadFeedAd = (info: FeedInfo): Promise<void> => {
   if (Platform.OS === 'android') {
     return AdManager.preloadFeedAd(info);
+  }
+  if (Platform.OS === 'ios') {
+    if (!PangleAdModule) {
+      return Promise.reject(new Error('PangleAdModule 未注册'));
+    }
+    const width = Number(info.adWidth || 0);
+    PangleAdModule.loadExpressNativeAdWithAdSize(info.codeid, width, 0);
   }
   return Promise.resolve();
 };
@@ -46,6 +77,13 @@ const loadDrawFeedAd = (info: FeedInfo) => {
 
 // 主动看激励视频时，才检查这个权限
 const requestPermission = () => {
-  AdManager.requestPermission();
+  if (Platform.OS === 'android') {
+    AdManager.requestPermission();
+    return;
+  }
+
+  if (Platform.OS === 'ios' && PangleAdModule) {
+    PangleAdModule.requestATT();
+  }
 };
 export { init, loadFeedAd, preloadFeedAd, loadDrawFeedAd, requestPermission };

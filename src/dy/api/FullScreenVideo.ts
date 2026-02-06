@@ -4,9 +4,9 @@
  * @description: 全屏广告
  */
 
-import { NativeModules, NativeEventEmitter } from 'react-native';
+import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
 import type { EventSubscription } from 'react-native';
-const { FullScreenVideoModule } = NativeModules;
+const { FullScreenVideoModule, PangleAdModule } = NativeModules;
 
 export enum AD_EVENT_TYPE {
   onAdError = 'onAdError', // 广告加载失败监听
@@ -26,6 +26,68 @@ type ListenerCache = {
 };
 
 export default (props: FullScreenProps) => {
+  if (Platform.OS === 'ios') {
+    const { codeid } = props;
+    if (!PangleAdModule) {
+      const result = Promise.reject(new Error('PangleAdModule 未注册'));
+      return {
+        result,
+        subscribe: () => ({ remove: () => {} }),
+        cleanup: () => {},
+      };
+    }
+    const eventEmitter = new NativeEventEmitter(PangleAdModule);
+    const listenerCache: ListenerCache = {} as ListenerCache;
+
+    const result = (async () => {
+      PangleAdModule.loadInterstitialAd(codeid);
+
+      const maxRetry = 40;
+      for (let i = 0; i < maxRetry; i += 1) {
+        const ready = await PangleAdModule.isInterstitialAdReady();
+        if (ready) {
+          return PangleAdModule.showInterstitialAd();
+        }
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 120);
+        });
+      }
+
+      throw new Error('全屏广告加载超时');
+    })();
+
+    return {
+      result,
+      subscribe: (type: AD_EVENT_TYPE, callback: (event: any) => void) => {
+        if (listenerCache[type]) {
+          listenerCache[type]?.remove();
+        }
+
+        const eventMap: Record<AD_EVENT_TYPE, string> = {
+          [AD_EVENT_TYPE.onAdError]: 'PangleInterstitialAdLoadFail',
+          [AD_EVENT_TYPE.onAdLoaded]: 'PangleInterstitialAdLoaded',
+          [AD_EVENT_TYPE.onAdClick]: 'PangleInterstitialAdClicked',
+          [AD_EVENT_TYPE.onAdClose]: 'PangleInterstitialAdClosed',
+        };
+
+        return (listenerCache[type] = eventEmitter.addListener(
+          eventMap[type],
+          (event: any) => {
+            callback(event);
+          }
+        ));
+      },
+      cleanup: () => {
+        Object.values(listenerCache).forEach((subscription) => {
+          subscription?.remove();
+        });
+        Object.keys(listenerCache).forEach((key) => {
+          delete listenerCache[key as AD_EVENT_TYPE];
+        });
+      },
+    };
+  }
+
   const { provider, codeid, orientation = 'VERTICAL' } = props;
   const eventEmitter = new NativeEventEmitter(FullScreenVideoModule);
   // Per-instance listener cache to avoid conflicts with multiple ads

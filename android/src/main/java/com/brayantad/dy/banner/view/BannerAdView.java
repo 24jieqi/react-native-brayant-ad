@@ -312,4 +312,11 @@ public class BannerAdView extends RelativeLayout {
       mBannerAd = null;
     }
   }
+
+  @Override
+  protected void onAttachedToWindow() {
+    super.onAttachedToWindow();
+    // 路由切换后重新挂载时，主动触发一次加载
+    showAd();
+  }
 }
