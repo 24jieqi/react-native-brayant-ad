@@ -1,12 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Platform, requireNativeComponent, UIManager } from 'react-native';
-import type { ViewStyle } from 'react-native';
+import {
+  Platform,
+  requireNativeComponent,
+  UIManager,
+  View,
+  findNodeHandle,
+  NativeModules,
+  NativeEventEmitter,
+} from 'react-native';
+import type { EventSubscription, ViewStyle } from 'react-native';
 
 // BannerAd currently only supports Android platform
 const ComponentName = Platform.select({
   android: 'BannerAdViewManager',
   ios: undefined,
 }) as string | undefined;
+const { PangleAdModule } = NativeModules;
 
 export interface BannerAdEvent {
   message?: string;
@@ -33,8 +42,7 @@ const LINKING_ERROR =
   `The package 'react-native-brayant-ad' doesn't seem to be linked. Make sure: \n\n` +
   Platform.select({ ios: "- You have run 'pod install'\n", default: '' }) +
   '- You rebuilt the app after installing the package\n' +
-  '- You are not using Expo Go\n' +
-  '\nNote: BannerAd is currently only supported on Android platform.';
+  '- You are not using Expo Go\n';
 
 // Lazy load native component to avoid duplicate registration on hot reload
 type BannerAdComponentType = React.ComponentType<BannerAdProps> | null;
@@ -74,6 +82,7 @@ const BannerAdView = (props: BannerAdProps) => {
   const [dismissed, setDismissed] = useState(false);
   const [height, setHeight] = useState(adHeight);
   const heightInitialized = useRef(false);
+  const iosContainerRef = useRef<View | null>(null);
 
   // Reset state when visible changes from false to true to allow re-display
   useEffect(() => {
@@ -84,9 +93,102 @@ const BannerAdView = (props: BannerAdProps) => {
     }
   }, [visible, adHeight]);
 
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || !PangleAdModule || !visible || dismissed) {
+      return;
+    }
+
+    const emitter = new NativeEventEmitter(PangleAdModule);
+    const subscriptions: EventSubscription[] = [];
+    const fixedSizeType = 3;
+
+    const showBanner = () => {
+      const tag = findNodeHandle(iosContainerRef.current);
+      if (!tag) {
+        return;
+      }
+
+      PangleAdModule.showBannerAd(tag).catch((error: unknown) => {
+        onAdError?.({ message: String(error) });
+      });
+    };
+
+    subscriptions.push(
+      emitter.addListener('PangleBannerAdLoaded', () => {
+        setTimeout(showBanner, 50);
+      })
+    );
+    subscriptions.push(
+      emitter.addListener('PangleBannerAdLoadFail', (event: BannerAdEvent) => {
+        onAdError?.(event);
+      })
+    );
+    subscriptions.push(
+      emitter.addListener('PangleBannerAdRenderSuccess', () => {
+        if (!heightInitialized.current) {
+          heightInitialized.current = true;
+          setHeight(adHeight);
+        }
+        onAdRenderSuccess?.({ width: adWidth, height: adHeight });
+      })
+    );
+    subscriptions.push(
+      emitter.addListener('PangleBannerAdShowed', (event: BannerAdEvent) => {
+        onAdShow?.(event);
+      })
+    );
+    subscriptions.push(
+      emitter.addListener('PangleBannerAdClicked', (event: BannerAdEvent) => {
+        onAdClick?.(event);
+      })
+    );
+    subscriptions.push(
+      emitter.addListener('PangleBannerAdClosed', (event: BannerAdEvent) => {
+        setDismissed(true);
+        onAdDismiss?.(event);
+      })
+    );
+
+    PangleAdModule.loadBannerAdWithSize(
+      codeid,
+      fixedSizeType,
+      adWidth,
+      adHeight
+    );
+
+    return () => {
+      subscriptions.forEach((subscription) => subscription.remove());
+      PangleAdModule.hideBannerAd?.();
+      PangleAdModule.removeBannerAd?.();
+    };
+  }, [
+    adHeight,
+    adWidth,
+    codeid,
+    dismissed,
+    onAdClick,
+    onAdDismiss,
+    onAdError,
+    onAdRenderSuccess,
+    onAdShow,
+    visible,
+  ]);
+
   // Early returns after all hooks
-  if (Platform.OS !== 'android' || !visible || dismissed) {
+  if (!visible || dismissed) {
     return null;
+  }
+
+  if (Platform.OS === 'ios') {
+    if (!PangleAdModule) {
+      throw new Error(LINKING_ERROR);
+    }
+    return (
+      <View
+        ref={iosContainerRef}
+        style={{ width: adWidth, height, ...style }}
+      />
+    );
   }
 
   const NativeComponent = getBannerAdComponent();

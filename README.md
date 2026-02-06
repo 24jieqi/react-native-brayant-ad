@@ -59,7 +59,7 @@ allprojects {
 | 全屏视频 | `startFullScreenVideo` | ✅ | ✅ |
 | Feed 信息流组件 | `FeedAdView` | ✅ | ✅ |
 | Draw 信息流组件 | `DrawFeedView` / `loadDrawFeedAd` | ✅ | ❌ |
-| Banner 组件 | `BannerAdView` | ✅ | ❌ |
+| Banner 组件 | `BannerAdView` | ✅ | ✅ |
 
 ## 4. 快速开始（推荐接入顺序）
 
@@ -249,7 +249,7 @@ loadDrawFeedAd({
 />
 ```
 
-## 10. Banner 组件（Android）
+## 10. Banner 组件（Android / iOS）
 
 ```tsx
 import { BannerAdView } from '@24jieqi/react-native-brayant-ad';
@@ -267,6 +267,11 @@ import { BannerAdView } from '@24jieqi/react-native-brayant-ad';
   onAdDislike={(e) => console.log('不感兴趣', e)}
 />
 ```
+
+说明：
+
+- Android / iOS 均可使用同一套 `BannerAdView` 参数。
+- iOS 端不触发 `onAdDislike`（该事件主要用于 Android）。
 
 ## 11. 导出清单
 

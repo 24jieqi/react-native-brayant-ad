@@ -20,6 +20,7 @@
 @property(nonatomic, assign) BannerAdSizeType currentSizeType;
 @property(nonatomic, assign) double fixedWidth;
 @property(nonatomic, assign) double fixedHeight;
+@property(nonatomic, weak) UIView *currentParentView;
 
 @end
 
@@ -189,10 +190,10 @@
     NSLog(@"[Pangle] parentView 不能为空");
     return;
   }
-
   // 修复：先保存 bannerAdView 的引用，再清除旧的 bannerView
   BUNativeExpressBannerView *adViewToDisplay = self.bannerAdView;
   [self removeAd];
+  self.currentParentView = parentView;
   
   self.bannerView = adViewToDisplay;
 
@@ -209,7 +210,7 @@
   [parentView bringSubviewToFront:self.bannerView];
 
   if ([self.delegate respondsToSelector:@selector(bannerAdDidShow:)]) {
-    [self.delegate bannerAdDidShow:self.bannerAdView];
+    [self.delegate bannerAdDidShow:adViewToDisplay];
   }
   [[NSNotificationCenter defaultCenter]
       postNotificationName:@"PangleBannerAdShowed"
@@ -224,6 +225,7 @@
   [self stopAutoRefresh];
   [self.bannerView removeFromSuperview];
   self.bannerView = nil;
+  self.currentParentView = nil;
   self.adLoaded = NO;
   NSLog(@"[Pangle] Banner广告已隐藏");
 }
@@ -233,6 +235,7 @@
   [self.bannerView removeFromSuperview];
   self.bannerView = nil;
   self.bannerAdView = nil;
+  self.currentParentView = nil;
   self.adLoaded = NO;
   NSLog(@"[Pangle] Banner广告已移除");
 }
@@ -271,6 +274,10 @@
 - (void)nativeExpressBannerAdViewDidLoad:(BUNativeExpressBannerView *)bannerAdView {
     NSLog(@"[Pangle] Banner广告加载成功");
     self.adLoaded = YES;
+    UIView *parentView = self.currentParentView;
+    if (parentView) {
+        [self showInView:parentView];
+    }
     if ([self.delegate respondsToSelector:@selector(bannerAdDidLoadSuccess:)]) {
         [self.delegate bannerAdDidLoadSuccess:bannerAdView];
     }
