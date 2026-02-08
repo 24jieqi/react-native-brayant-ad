@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Platform,
   requireNativeComponent,
@@ -83,6 +83,14 @@ const BannerAdView = (props: BannerAdProps) => {
   const [height, setHeight] = useState(adHeight);
   const heightInitialized = useRef(false);
   const iosContainerRef = useRef<View | null>(null);
+  const iosLoadedRef = useRef(false);
+  const visibleRef = useRef(visible);
+  const dismissedRef = useRef(dismissed);
+  const onAdRenderSuccessRef = useRef(onAdRenderSuccess);
+  const onAdErrorRef = useRef(onAdError);
+  const onAdDismissRef = useRef(onAdDismiss);
+  const onAdClickRef = useRef(onAdClick);
+  const onAdShowRef = useRef(onAdShow);
 
   // Reset state when visible changes from false to true to allow re-display
   useEffect(() => {
@@ -94,33 +102,54 @@ const BannerAdView = (props: BannerAdProps) => {
   }, [visible, adHeight]);
 
   useEffect(() => {
-    if (Platform.OS !== 'ios' || !PangleAdModule || !visible || dismissed) {
+    visibleRef.current = visible;
+    dismissedRef.current = dismissed;
+    onAdRenderSuccessRef.current = onAdRenderSuccess;
+    onAdErrorRef.current = onAdError;
+    onAdDismissRef.current = onAdDismiss;
+    onAdClickRef.current = onAdClick;
+    onAdShowRef.current = onAdShow;
+  }, [
+    dismissed,
+    onAdClick,
+    onAdDismiss,
+    onAdError,
+    onAdRenderSuccess,
+    onAdShow,
+    visible,
+  ]);
+
+  const showIOSBanner = useCallback(() => {
+    const tag = findNodeHandle(iosContainerRef.current);
+    if (!tag || !PangleAdModule) {
+      return;
+    }
+    PangleAdModule.showBannerAd(tag).catch((error: unknown) => {
+      onAdErrorRef.current?.({ message: String(error) });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || !PangleAdModule) {
       return;
     }
 
     const emitter = new NativeEventEmitter(PangleAdModule);
     const subscriptions: EventSubscription[] = [];
     const fixedSizeType = 3;
-
-    const showBanner = () => {
-      const tag = findNodeHandle(iosContainerRef.current);
-      if (!tag) {
-        return;
-      }
-
-      PangleAdModule.showBannerAd(tag).catch((error: unknown) => {
-        onAdError?.({ message: String(error) });
-      });
-    };
+    iosLoadedRef.current = false;
 
     subscriptions.push(
       emitter.addListener('PangleBannerAdLoaded', () => {
-        setTimeout(showBanner, 50);
+        iosLoadedRef.current = true;
+        if (visibleRef.current && !dismissedRef.current) {
+          setTimeout(showIOSBanner, 50);
+        }
       })
     );
     subscriptions.push(
       emitter.addListener('PangleBannerAdLoadFail', (event: BannerAdEvent) => {
-        onAdError?.(event);
+        onAdErrorRef.current?.(event);
       })
     );
     subscriptions.push(
@@ -129,23 +158,23 @@ const BannerAdView = (props: BannerAdProps) => {
           heightInitialized.current = true;
           setHeight(adHeight);
         }
-        onAdRenderSuccess?.({ width: adWidth, height: adHeight });
+        onAdRenderSuccessRef.current?.({ width: adWidth, height: adHeight });
       })
     );
     subscriptions.push(
       emitter.addListener('PangleBannerAdShowed', (event: BannerAdEvent) => {
-        onAdShow?.(event);
+        onAdShowRef.current?.(event);
       })
     );
     subscriptions.push(
       emitter.addListener('PangleBannerAdClicked', (event: BannerAdEvent) => {
-        onAdClick?.(event);
+        onAdClickRef.current?.(event);
       })
     );
     subscriptions.push(
       emitter.addListener('PangleBannerAdClosed', (event: BannerAdEvent) => {
         setDismissed(true);
-        onAdDismiss?.(event);
+        onAdDismissRef.current?.(event);
       })
     );
 
@@ -157,21 +186,29 @@ const BannerAdView = (props: BannerAdProps) => {
     );
 
     return () => {
+      iosLoadedRef.current = false;
       subscriptions.forEach((subscription) => subscription.remove());
-      PangleAdModule.hideBannerAd?.();
       PangleAdModule.removeBannerAd?.();
     };
+  }, [adHeight, adWidth, codeid, showIOSBanner]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || !PangleAdModule) {
+      return;
+    }
+    if (!visible || dismissed) {
+      PangleAdModule.hideBannerAd?.();
+      return;
+    }
+    if (iosLoadedRef.current) {
+      setTimeout(showIOSBanner, 0);
+    }
   }, [
-    adHeight,
-    adWidth,
-    codeid,
     dismissed,
-    onAdClick,
-    onAdDismiss,
-    onAdError,
-    onAdRenderSuccess,
-    onAdShow,
     visible,
+    adWidth,
+    adHeight,
+    showIOSBanner,
   ]);
 
   // Early returns after all hooks

@@ -33,6 +33,12 @@ public class BannerAdViewManager extends ViewGroupManager<BannerAdView> {
   }
 
   @Override
+  public void onDropViewInstance(@NonNull BannerAdView view) {
+    view.destroy();
+    super.onDropViewInstance(view);
+  }
+
+  @Override
   public boolean needsCustomLayoutForChildren() {
     return true;
   }

@@ -82,8 +82,12 @@ public class FeedAdView extends RelativeLayout {
       super.setVisibility(View.INVISIBLE);
       return;
     }
-    if (mHasRenderedAd && mCurrentAd != null) {
+    if (canReuseRenderedAd()) {
       super.setVisibility(View.VISIBLE);
+      return;
+    }
+    if (mHasRenderedAd && mCurrentAd != null) {
+      _showTTAd(mCurrentAd);
       return;
     }
     showAd();
@@ -94,8 +98,12 @@ public class FeedAdView extends RelativeLayout {
       super.setVisibility(View.INVISIBLE);
       return;
     }
-    if (mHasRenderedAd && mCurrentAd != null) {
+    if (canReuseRenderedAd()) {
       super.setVisibility(View.VISIBLE);
+      return;
+    }
+    if (mHasRenderedAd && mCurrentAd != null) {
+      _showTTAd(mCurrentAd);
       return;
     }
     Log.d(TAG, "showAd: width:" + _expectedWidth + " codeid:" + _codeid);
@@ -450,11 +458,23 @@ public class FeedAdView extends RelativeLayout {
       super.setVisibility(View.INVISIBLE);
       return;
     }
-    if (mHasRenderedAd && mCurrentAd != null) {
+    if (canReuseRenderedAd()) {
       super.setVisibility(View.VISIBLE);
+      return;
+    }
+    if (mHasRenderedAd && mCurrentAd != null) {
+      _showTTAd(mCurrentAd);
       return;
     }
     // 路由切换后重新挂载时，仅在无可复用实例时才触发加载
     showAd();
+  }
+
+  private boolean canReuseRenderedAd() {
+    if (!mHasRenderedAd || mCurrentAd == null) {
+      return false;
+    }
+    final RelativeLayout mExpressContainer = findViewById(R.id.feed_container);
+    return mExpressContainer != null && mExpressContainer.getChildCount() > 0;
   }
 }

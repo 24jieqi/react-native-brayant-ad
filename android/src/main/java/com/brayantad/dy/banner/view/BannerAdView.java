@@ -82,9 +82,12 @@ public class BannerAdView extends RelativeLayout {
       super.setVisibility(View.INVISIBLE);
       return;
     }
-
-    if (mHasRenderedAd && mBannerAd != null) {
+    if (canReuseRenderedAd()) {
       super.setVisibility(View.VISIBLE);
+      return;
+    }
+    if (mHasRenderedAd && mBannerAd != null) {
+      showBannerAd(mBannerAd);
       return;
     }
     // 仅在没有可复用广告实例时才加载
@@ -96,8 +99,12 @@ public class BannerAdView extends RelativeLayout {
       super.setVisibility(View.INVISIBLE);
       return;
     }
-    if (mHasRenderedAd && mBannerAd != null) {
+    if (canReuseRenderedAd()) {
       super.setVisibility(View.VISIBLE);
+      return;
+    }
+    if (mHasRenderedAd && mBannerAd != null) {
+      showBannerAd(mBannerAd);
       return;
     }
     // 参数校验
@@ -321,14 +328,19 @@ public class BannerAdView extends RelativeLayout {
     sendEvent("onAdDislike", event);
   }
 
-  @Override
-  protected void onDetachedFromWindow() {
-    super.onDetachedFromWindow();
+  public void destroy() {
     if (mBannerAd != null) {
       mBannerAd.destroy();
       mBannerAd = null;
     }
     mHasRenderedAd = false;
+    mIsAdLoading = false;
+  }
+
+  @Override
+  protected void onDetachedFromWindow() {
+    super.onDetachedFromWindow();
+    super.setVisibility(View.INVISIBLE);
   }
 
   @Override
@@ -338,11 +350,23 @@ public class BannerAdView extends RelativeLayout {
       super.setVisibility(View.INVISIBLE);
       return;
     }
-    if (mHasRenderedAd && mBannerAd != null) {
+    if (canReuseRenderedAd()) {
       super.setVisibility(View.VISIBLE);
+      return;
+    }
+    if (mHasRenderedAd && mBannerAd != null) {
+      showBannerAd(mBannerAd);
       return;
     }
     // 路由切换后重新挂载时，仅在无可复用实例时才触发加载
     showAd();
+  }
+
+  private boolean canReuseRenderedAd() {
+    if (!mHasRenderedAd || mBannerAd == null) {
+      return false;
+    }
+    RelativeLayout container = findViewById(R.id.feed_container);
+    return container != null && container.getChildCount() > 0;
   }
 }

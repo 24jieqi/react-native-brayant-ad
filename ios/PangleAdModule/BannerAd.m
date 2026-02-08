@@ -226,7 +226,6 @@
   [self.bannerView removeFromSuperview];
   self.bannerView = nil;
   self.currentParentView = nil;
-  self.adLoaded = NO;
   NSLog(@"[Pangle] Banner广告已隐藏");
 }
 
