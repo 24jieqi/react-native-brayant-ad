@@ -17,6 +17,7 @@ import FeedAdView from './dy/component/FeedAd';
 import BannerAdView from './dy/component/BannerAd';
 
 import startFullScreenVideo from './dy/api/FullScreenVideo';
+import startInterstitialAd from './dy/api/InterstitialAd';
 const LINKING_ERROR =
   `The package 'react-native-brayant-ad' doesn't seem to be linked. Make sure: \n\n` +
   Platform.select({ ios: "- You have run 'pod install'\n", default: '' }) +
@@ -45,6 +46,7 @@ export {
   loadDrawFeedAd,
   startRewardVideo,
   startFullScreenVideo,
+  startInterstitialAd,
   dyLoadSplashAd,
   preloadSplashAd,
   hasPreloadedSplashAd,

@@ -5,6 +5,7 @@ React Native 国内广告 SDK 封装，当前主要集成穿山甲（Pangle）�
 - 开屏广告（支持预加载）
 - 激励视频
 - 全屏视频
+- 插屏广告
 - 信息流 Feed（组件）
 - Draw 信息流（组件）
 - Banner（组件）
@@ -57,6 +58,7 @@ allprojects {
 | 开屏预加载 | `preloadSplashAd` / `hasPreloadedSplashAd` / `clearPreloadedSplashAd` | ✅ | ✅（兼容实现） |
 | 激励视频 | `startRewardVideo` | ✅ | ✅ |
 | 全屏视频 | `startFullScreenVideo` | ✅ | ✅ |
+| 插屏广告 | `startInterstitialAd` | ✅（复用全屏视频通道） | ✅ |
 | Feed 信息流组件 | `FeedAdView` | ✅ | ✅ |
 | Draw 信息流组件 | `DrawFeedView` / `loadDrawFeedAd` | ✅ | ❌ |
 | Banner 组件 | `BannerAdView` | ✅ | ✅ |
@@ -203,7 +205,36 @@ full.subscribe('onAdClose', () => {});
 full.cleanup();
 ```
 
-## 8. Feed 信息流组件
+## 8. 插屏广告
+
+```tsx
+import { startInterstitialAd } from '@24jieqi/react-native-brayant-ad';
+
+const interstitial = startInterstitialAd({
+  codeid: '你的插屏广告位',
+  orientation: 'VERTICAL', // 可选：HORIZONTAL | VERTICAL（Android）
+  provider: '头条', // 可选：头条 | 腾讯 | 快手（Android）
+});
+
+interstitial.result.then((res) => {
+  console.log('插屏广告结果', res);
+});
+
+interstitial.subscribe('onAdLoaded', (e) => console.log('加载成功', e));
+interstitial.subscribe('onAdError', (e) => console.log('加载失败', e));
+interstitial.subscribe('onAdClick', (e) => console.log('点击', e));
+interstitial.subscribe('onAdClose', (e) => console.log('关闭', e));
+
+// 页面销毁时
+interstitial.cleanup();
+```
+
+说明：
+
+- iOS：使用原生 `PangleAdModule` 插屏能力（`load/show/isReady`）。
+- Android：当前复用全屏视频加载/展示通道，统一通过 `startInterstitialAd` 调用。
+
+## 9. Feed 信息流组件
 
 ```tsx
 import { FeedAdView, preloadFeedAd } from '@24jieqi/react-native-brayant-ad';
@@ -229,7 +260,7 @@ await preloadFeedAd({ codeid: '你的Feed广告位', adWidth: 375 });
 - `style?: ViewStyle`
 - `onAdLayout/onAdError/onAdClick/onAdClose`
 
-## 9. Draw 信息流组件（Android）
+## 10. Draw 信息流组件（Android）
 
 ```tsx
 import { DrawFeedView, loadDrawFeedAd } from '@24jieqi/react-native-brayant-ad';
@@ -249,7 +280,7 @@ loadDrawFeedAd({
 />
 ```
 
-## 10. Banner 组件（Android / iOS）
+## 11. Banner 组件（Android / iOS）
 
 ```tsx
 import { BannerAdView } from '@24jieqi/react-native-brayant-ad';
@@ -273,7 +304,7 @@ import { BannerAdView } from '@24jieqi/react-native-brayant-ad';
 - Android / iOS 均可使用同一套 `BannerAdView` 参数。
 - iOS 端不触发 `onAdDislike`（该事件主要用于 Android）。
 
-## 11. 导出清单
+## 12. 导出清单
 
 ```ts
 import {
@@ -287,6 +318,7 @@ import {
   clearPreloadedSplashAd,
   startRewardVideo,
   startFullScreenVideo,
+  startInterstitialAd,
   loadDrawFeedAd,
   DrawFeedView,
   FeedAdView,
@@ -294,23 +326,23 @@ import {
 } from '@24jieqi/react-native-brayant-ad';
 ```
 
-## 12. 常见问题
+## 13. 常见问题
 
-### 12.1 提示模块未链接（`doesn't seem to be linked`）
+### 13.1 提示模块未链接（`doesn't seem to be linked`）
 
 - 确认已重新编译 App（不是仅热更新）
 - iOS 确认执行过 `pod install`
 - 确认不是在 Expo Go 中运行
 
-### 12.2 Android 开屏后出现白屏
+### 13.2 Android 开屏后出现白屏
 
 优先使用 `preloadSplashAd` 在启动后预加载，再用 `dyLoadSplashAd` 展示。
 
-### 12.3 监听器重复触发
+### 13.3 监听器重复触发
 
 每次创建广告实例后，在页面卸载时调用 `cleanup()`，并避免同一实例重复绑定同一事件。
 
-## 13. 本地开发
+## 14. 本地开发
 
 ```bash
 pnpm typecheck
