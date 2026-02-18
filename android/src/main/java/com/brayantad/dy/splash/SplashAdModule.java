@@ -2,6 +2,7 @@ package com.brayantad.dy.splash;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.util.DisplayMetrics;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -30,7 +31,7 @@ public class SplashAdModule extends ReactContextBaseJavaModule {
   String TAG = "SplashAd";
   ReactApplicationContext mContext;
   // 开屏广告预加载超时时间
-  private static final int PRELOAD_TIME_OUT = 3500;
+  private static final int PRELOAD_TIME_OUT = 5000;
 
   public SplashAdModule(@NonNull ReactApplicationContext reactContext) {
     super(reactContext);
@@ -79,10 +80,11 @@ public class SplashAdModule extends ReactContextBaseJavaModule {
     TTAdNative mTTAdNative = DyADCore.TTAdSdk;
 
     // 创建开屏广告请求参数
+    int[] expressSizeDp = resolveExpressViewSizeDp();
     AdSlot adSlot = new AdSlot.Builder()
       .setCodeId(codeid)
       .setSupportDeepLink(true)
-      .setExpressViewAcceptedSize(1080, 1920)
+      .setExpressViewAcceptedSize(expressSizeDp[0], expressSizeDp[1])
       .setAdLoadType(PRELOAD)
       .build();
 
@@ -152,6 +154,18 @@ public class SplashAdModule extends ReactContextBaseJavaModule {
     if (DyADCore.splashPreloadTime == 0) return false;
     long elapsed = System.currentTimeMillis() - DyADCore.splashPreloadTime;
     return elapsed < DyADCore.SPLASH_PRELOAD_VALID_DURATION;
+  }
+
+  private int[] resolveExpressViewSizeDp() {
+    DisplayMetrics metrics = mContext.getResources().getDisplayMetrics();
+    int widthDp = Math.round(metrics.widthPixels / metrics.density);
+    int heightDp = Math.round(metrics.heightPixels / metrics.density);
+
+    // 按屏幕尺寸动态设置模板大小，避免固定超大尺寸导致低填充
+    widthDp = Math.max(widthDp, 320);
+    heightDp = Math.max(heightDp, 480);
+
+    return new int[]{widthDp, heightDp};
   }
 
   /**

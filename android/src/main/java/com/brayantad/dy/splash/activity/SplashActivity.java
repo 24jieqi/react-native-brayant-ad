@@ -1,18 +1,14 @@
 package com.brayantad.dy.splash.activity;
 
-import static com.bytedance.sdk.openadsdk.TTAdLoadType.PRELOAD;
+import static com.bytedance.sdk.openadsdk.TTAdLoadType.LOAD;
 
 import android.annotation.SuppressLint;
-import android.content.pm.ActivityInfo;
-import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Message;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.View;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
-import android.widget.TextView;
-import androidx.annotation.MainThread;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -33,8 +29,8 @@ import com.facebook.react.modules.core.DeviceEventManagerModule;
 
 @SuppressLint("CustomSplashScreen")
 public class SplashActivity extends AppCompatActivity implements WeakHandler.IHandler {
-  // 开屏广告加载超时时间,建议大于1000,这里为了冷启动第一次加载到广告并且展示,示例设置了3500ms
-  private static final int AD_TIME_OUT = 3500;
+  // 开屏广告加载超时时间，弱网下适度放宽可提升填充率
+  private static final int AD_TIME_OUT = 5000;
   private static final int MSG_GO_MAIN = 1;
   static String TAG = "SplashAd";
   // 开屏广告加载发生超时但是SDK没有及时回调结果的时候，做的一层保护。
@@ -64,7 +60,7 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
 
     // 读取 code id
     Bundle extras = getIntent().getExtras();
-    code_id = extras.getString("codeid");
+    code_id = extras != null ? extras.getString("codeid") : null;
 
     // 初始化广告 SDK
     mTTAdNative = DyADCore.TTAdSdk;
@@ -95,6 +91,7 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
 
       // 加载并显示开屏广告
       loadSplashAd(
+        this,
         code_id,
         this::showSplashAd,
         () -> {
@@ -160,6 +157,7 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
 
   // 加载开屏广告方法
   public static void loadSplashAd(
+    AppCompatActivity activity,
     String code_id,
     Runnable callback,
     Runnable goback
@@ -176,14 +174,22 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
       mTTAdNative = DyADCore.TTAdSdk;
     }
 
+    if (code_id == null || code_id.isEmpty()) {
+      WritableMap params = Arguments.createMap();
+      params.putString("onAdError", "广告位ID为空");
+      sendEvent(TAG + "-onAdError", params);
+      goback.run();
+      return;
+    }
+
     // 创建开屏广告请求参数 AdSlot ,具体参数含义参考文档
     // ①模板渲染的开屏请求方法需设置setExpressViewAcceptedSize参数 单位dp。非模板渲染开屏请求方法需设置setImageAcceptedSize参数 单位px 。切记不可使用错误
+    int[] expressSizeDp = resolveExpressViewSizeDp(activity);
     AdSlot adSlot = new AdSlot.Builder()
       .setCodeId(code_id)
       .setSupportDeepLink(true)
-//      .setImageAcceptedSize(1080, 1920)
-      .setExpressViewAcceptedSize(1080, 1920)
-      .setAdLoadType(PRELOAD)
+      .setExpressViewAcceptedSize(expressSizeDp[0], expressSizeDp[1])
+      .setAdLoadType(LOAD)
       .build();
 
     // 请求广告，调用开屏广告异步请求接口，对请求回调的广告作渲染处理
@@ -202,10 +208,14 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
         public void onSplashLoadFail(CSJAdError csjAdError) {
           // 广告渲染失败
           Log.d(TAG, "开屏广告加载失败:" + csjAdError);
+          DyADCore.splashAd = null;
           // 回调监听方法
           WritableMap params = Arguments.createMap();
-          params.putString("onSplashLoadFail", "广告渲染加载:" + csjAdError);
+          String errorMessage = "广告渲染加载:" + csjAdError;
+          params.putString("onSplashLoadFail", errorMessage);
+          params.putString("onAdError", errorMessage);
           sendEvent(TAG + "-onSplashLoadFail", params);
+          sendEvent(TAG + "-onAdError", params);
 
           // 关闭开屏广告
           goback.run();
@@ -222,6 +232,7 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
         public void onSplashRenderFail(CSJSplashAd csjSplashAd, CSJAdError csjAdError) {
           // 广告渲染失败
           Log.d(TAG, "开屏广告渲染失败:" + csjAdError);
+          DyADCore.splashAd = null;
           // showToast(message + " - " + code_id);
 
           // 回调监听方法
@@ -235,6 +246,18 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
       },
       AD_TIME_OUT
     );
+  }
+
+  private static int[] resolveExpressViewSizeDp(AppCompatActivity activity) {
+    DisplayMetrics metrics = activity.getResources().getDisplayMetrics();
+    int widthDp = Math.round(metrics.widthPixels / metrics.density);
+    int heightDp = Math.round(metrics.heightPixels / metrics.density);
+
+    // 按屏幕尺寸动态设置模板大小，避免固定超大尺寸导致低填充
+    widthDp = Math.max(widthDp, 320);
+    heightDp = Math.max(heightDp, 480);
+
+    return new int[]{widthDp, heightDp};
   }
 
   private void showSplashAd() {
