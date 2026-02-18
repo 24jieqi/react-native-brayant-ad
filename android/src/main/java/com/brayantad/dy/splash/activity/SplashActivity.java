@@ -4,6 +4,8 @@ import static com.bytedance.sdk.openadsdk.TTAdLoadType.LOAD;
 
 import android.annotation.SuppressLint;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Message;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -31,6 +33,8 @@ import com.facebook.react.modules.core.DeviceEventManagerModule;
 public class SplashActivity extends AppCompatActivity implements WeakHandler.IHandler {
   // 开屏广告加载超时时间，弱网下适度放宽可提升填充率
   private static final int AD_TIME_OUT = 5000;
+  // 展示阶段守卫：渲染成功后若迟迟未收到展示回调，判定为展示异常并兜底关闭
+  private static final int SHOW_GUARD_TIMEOUT = 1500;
   private static final int MSG_GO_MAIN = 1;
   static String TAG = "SplashAd";
   // 开屏广告加载发生超时但是SDK没有及时回调结果的时候，做的一层保护。
@@ -41,6 +45,11 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
   private boolean mForceGoMain;
   // 开屏广告是否已经加载
   private boolean mHasLoaded;
+  private boolean mShowCallbackReceived;
+  private long mLoadStartTimeMs;
+  private long mRenderSuccessTimeMs;
+  private final Handler showGuardHandler = new Handler(Looper.getMainLooper());
+  private Runnable showGuardTask;
 
   private String code_id;
 
@@ -90,8 +99,8 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
       mHandler.sendEmptyMessageDelayed(MSG_GO_MAIN, AD_TIME_OUT);
 
       // 加载并显示开屏广告
+      mLoadStartTimeMs = System.currentTimeMillis();
       loadSplashAd(
-        this,
         code_id,
         this::showSplashAd,
         () -> {
@@ -156,8 +165,7 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
   }
 
   // 加载开屏广告方法
-  public static void loadSplashAd(
-    AppCompatActivity activity,
+  public void loadSplashAd(
     String code_id,
     Runnable callback,
     Runnable goback
@@ -184,7 +192,7 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
 
     // 创建开屏广告请求参数 AdSlot ,具体参数含义参考文档
     // ①模板渲染的开屏请求方法需设置setExpressViewAcceptedSize参数 单位dp。非模板渲染开屏请求方法需设置setImageAcceptedSize参数 单位px 。切记不可使用错误
-    int[] expressSizeDp = resolveExpressViewSizeDp(activity);
+    int[] expressSizeDp = resolveExpressViewSizeDp();
     AdSlot adSlot = new AdSlot.Builder()
       .setCodeId(code_id)
       .setSupportDeepLink(true)
@@ -201,13 +209,16 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
         @Override
         public void onSplashLoadSuccess(CSJSplashAd csjSplashAd) {
           //5700及以上新增，开屏素材加载成功
-
+          long cost = System.currentTimeMillis() - mLoadStartTimeMs;
+          Log.d(TAG, "onSplashLoadSuccess，耗时=" + cost + "ms");
         }
 
         @Override
         public void onSplashLoadFail(CSJAdError csjAdError) {
           // 广告渲染失败
           Log.d(TAG, "开屏广告加载失败:" + csjAdError);
+          long cost = System.currentTimeMillis() - mLoadStartTimeMs;
+          Log.d(TAG, "onSplashLoadFail，耗时=" + cost + "ms");
           DyADCore.splashAd = null;
           // 回调监听方法
           WritableMap params = Arguments.createMap();
@@ -224,6 +235,9 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
         @Override
         public void onSplashRenderSuccess(CSJSplashAd csjSplashAd) {
           // 开屏广告加载成功，调用显示开屏广告
+          mRenderSuccessTimeMs = System.currentTimeMillis();
+          long cost = mRenderSuccessTimeMs - mLoadStartTimeMs;
+          Log.d(TAG, "onSplashRenderSuccess，耗时=" + cost + "ms");
           DyADCore.splashAd = csjSplashAd;
           callback.run();
         }
@@ -232,6 +246,8 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
         public void onSplashRenderFail(CSJSplashAd csjSplashAd, CSJAdError csjAdError) {
           // 广告渲染失败
           Log.d(TAG, "开屏广告渲染失败:" + csjAdError);
+          long cost = System.currentTimeMillis() - mLoadStartTimeMs;
+          Log.d(TAG, "onSplashRenderFail，耗时=" + cost + "ms");
           DyADCore.splashAd = null;
           // showToast(message + " - " + code_id);
 
@@ -248,8 +264,8 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
     );
   }
 
-  private static int[] resolveExpressViewSizeDp(AppCompatActivity activity) {
-    DisplayMetrics metrics = activity.getResources().getDisplayMetrics();
+  private int[] resolveExpressViewSizeDp() {
+    DisplayMetrics metrics = getResources().getDisplayMetrics();
     int widthDp = Math.round(metrics.widthPixels / metrics.density);
     int heightDp = Math.round(metrics.heightPixels / metrics.density);
 
@@ -278,25 +294,25 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
     // 清空加载成功的广告对象
     DyADCore.splashAd = null;
 
-    // 获取SplashView
-    View view = ad.getSplashView();
-    mSplashContainer.removeAllViews();
-
-    // 把SplashView 添加到ViewGroup中,注意开屏广告view：width >=70%屏幕宽；height >=50%屏幕宽
-    mSplashContainer.addView(view);
-
-    // 设置不开启开屏广告倒计时功能以及不显示跳过按钮,如果这么设置，您需要自定义倒计时逻辑
-    // ad.setNotAllowSdkCountdown();
-
-    // 设置SplashView的交互监听器
-
+    // 先绑定监听，再展示，避免丢失 onSplashAdShow 首帧回调
+    mShowCallbackReceived = false;
     ad.setSplashAdListener(
 
       new CSJSplashAd.SplashAdListener() {
 
         @Override
         public void onSplashAdShow(CSJSplashAd csjSplashAd) {
-          Log.d(TAG, "onAdShow");
+          long fromLoad = System.currentTimeMillis() - mLoadStartTimeMs;
+          long fromRender =
+            mRenderSuccessTimeMs > 0
+              ? System.currentTimeMillis() - mRenderSuccessTimeMs
+              : -1;
+          Log.d(
+            TAG,
+            "onAdShow，fromLoad=" + fromLoad + "ms, fromRender=" + fromRender + "ms"
+          );
+          mShowCallbackReceived = true;
+          cancelShowGuard();
           WritableMap params = Arguments.createMap();
           params.putBoolean("onAdShow", true);
           sendEvent(TAG + "-onAdShow", params);
@@ -305,6 +321,7 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
         @Override
         public void onSplashAdClick(CSJSplashAd csjSplashAd) {
           Log.d(TAG, "onAdClick");
+          cancelShowGuard();
           WritableMap params = Arguments.createMap();
           params.putBoolean("onAdClick", true);
           sendEvent(TAG + "-onAdClick", params);
@@ -315,7 +332,8 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
 
         @Override
         public void onSplashAdClose(CSJSplashAd csjSplashAd,  int closeType) {
-          Log.d(TAG, "onAdSkip");
+          Log.d(TAG, "onAdClose，closeType=" + closeType);
+          cancelShowGuard();
           WritableMap params = Arguments.createMap();
           params.putBoolean("onAdClose", true);
           sendEvent(TAG + "-onAdClose", params);
@@ -325,10 +343,51 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
         }
       }
     );
+
+    // 使用 SDK 展示接口，避免 getSplashView 直塞导致的首帧异常
+    mSplashContainer.removeAllViews();
+    try {
+      ad.showSplashView(mSplashContainer);
+    } catch (Throwable showError) {
+      Log.e(TAG, "showSplashView 异常，回退 getSplashView: " + showError);
+      View fallbackView = ad.getSplashView();
+      if (fallbackView == null) {
+        WritableMap params = Arguments.createMap();
+        params.putString("onAdError", "开屏广告视图为空");
+        sendEvent(TAG + "-onAdError", params);
+        goToMainActivity();
+        return;
+      }
+      mSplashContainer.addView(fallbackView);
+    }
+    scheduleShowGuard();
+  }
+
+  private void scheduleShowGuard() {
+    cancelShowGuard();
+    showGuardTask = () -> {
+      if (mShowCallbackReceived) {
+        return;
+      }
+      Log.w(TAG, "开屏广告渲染成功但未收到 onSplashAdShow，触发兜底关闭");
+      WritableMap params = Arguments.createMap();
+      params.putString("onAdError", "开屏广告展示超时（未触发展示回调）");
+      sendEvent(TAG + "-onAdError", params);
+      goToMainActivity();
+    };
+    showGuardHandler.postDelayed(showGuardTask, SHOW_GUARD_TIMEOUT);
+  }
+
+  private void cancelShowGuard() {
+    if (showGuardTask != null) {
+      showGuardHandler.removeCallbacks(showGuardTask);
+      showGuardTask = null;
+    }
   }
 
   // 关闭开屏广告方法
   private void goToMainActivity() {
+    cancelShowGuard();
     if (DyADCore.rewardActivity == null) {
       // 开屏广告控制活动未绑定
       return;
@@ -356,6 +415,7 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
 
   @Override
   public void finish() {
+    cancelShowGuard();
     super.finish();
     if (DyADCore.splashAd_anim_in != -1) {
       // 实现广告关闭跳转 Activity 动画设置
