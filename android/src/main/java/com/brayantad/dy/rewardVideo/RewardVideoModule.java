@@ -72,9 +72,17 @@ public class RewardVideoModule extends ReactContextBaseJavaModule {
 
   // 发送事件到RN
   public static void sendEvent(String eventName, @Nullable WritableMap params) {
-    mContext
-      .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-      .emit(TAG + "-" + eventName, params);
+    if (mContext == null || !mContext.hasActiveCatalystInstance()) {
+      Log.w(TAG, "skip event because React context is unavailable: " + eventName);
+      return;
+    }
+    try {
+      mContext
+        .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+        .emit(TAG + "-" + eventName, params);
+    } catch (Throwable error) {
+      Log.e(TAG, "emit event failed: " + eventName, error);
+    }
   }
 
 }

@@ -55,11 +55,19 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
 
   // 注册监听方法
   private static void sendEvent(String eventName, WritableMap params) {
-    AdManager
-      .reactAppContext.getJSModule(
-        DeviceEventManagerModule.RCTDeviceEventEmitter.class
-      )
-      .emit(eventName, params);
+    if (AdManager.reactAppContext == null || !AdManager.reactAppContext.hasActiveCatalystInstance()) {
+      Log.w(TAG, "skip event because React context is unavailable: " + eventName);
+      return;
+    }
+    try {
+      AdManager
+        .reactAppContext.getJSModule(
+          DeviceEventManagerModule.RCTDeviceEventEmitter.class
+        )
+        .emit(eventName, params);
+    } catch (Throwable error) {
+      Log.e(TAG, "emit event failed: " + eventName, error);
+    }
   }
 
   @Override

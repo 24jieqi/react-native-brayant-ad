@@ -45,13 +45,20 @@ public class FullScreenVideoModule extends ReactContextBaseJavaModule {
    * 启动穿山甲激励视频
    */
   public static void startTT(String codeId, String orientation) {
+    if (mContext == null) {
+      Log.e(TAG, "startTT: react context is null");
+      return;
+    }
     Intent intent = new Intent(mContext, FullScreenActivity.class);
     try {
       intent.putExtra("codeId", codeId);
       intent.putExtra("orientation", orientation);
       Activity context = mContext.getCurrentActivity();
+      if (context == null) {
+        Log.e(TAG, "startTT: currentActivity is null");
+        return;
+      }
       // 不要过渡动画
-      assert context != null;
       context.overridePendingTransition(0, 0);
       context.startActivityForResult(intent, 10000);
     } catch (Exception e) {
@@ -62,8 +69,16 @@ public class FullScreenVideoModule extends ReactContextBaseJavaModule {
 
   // 发送事件到RN
   public static void sendEvent(String eventName, @Nullable WritableMap params) {
-    mContext
-      .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-      .emit(TAG + "-" + eventName, params);
+    if (mContext == null || !mContext.hasActiveCatalystInstance()) {
+      Log.w(TAG, "skip event because React context is unavailable: " + eventName);
+      return;
+    }
+    try {
+      mContext
+        .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+        .emit(TAG + "-" + eventName, params);
+    } catch (Throwable error) {
+      Log.e(TAG, "emit event failed: " + eventName, error);
+    }
   }
 }
