@@ -226,7 +226,11 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
           params.putString("onSplashLoadFail", errorMessage);
           params.putString("onAdError", errorMessage);
           sendEvent(TAG + "-onSplashLoadFail", params);
-          sendEvent(TAG + "-onAdError", params);
+
+          // WritableMap 在 RN 桥接层发送后会被消费，不能重复 emit 同一实例
+          WritableMap errorParams = Arguments.createMap();
+          errorParams.putString("onAdError", errorMessage);
+          sendEvent(TAG + "-onAdError", errorParams);
 
           // 关闭开屏广告
           goback.run();
