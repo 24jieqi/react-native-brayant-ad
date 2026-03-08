@@ -111,15 +111,11 @@ RCT_EXPORT_METHOD(flushPendingAdClosedEvent) {
 }
 
 RCT_EXPORT_METHOD(addListener : (NSString *)eventName) {
-  if (!self.hasListeners) {
-    [self startObserving];
-  }
+  [super addListener:eventName];
 }
 
 RCT_EXPORT_METHOD(removeListeners : (double)count) {
-  if (count > 0 && self.hasListeners) {
-    [self stopObserving];
-  }
+  [super removeListeners:count];
 }
 
 - (NSArray<NSString *> *)supportedEvents {
