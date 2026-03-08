@@ -57,59 +57,63 @@
                  sizeType:(BannerAdSizeType)sizeType
                     width:(double)width
                     height:(double)height {
-  if (!slotID || slotID.length == 0) {
-    NSLog(@"[Pangle] Banner广告 SlotID 不能为空");
-    return;
-  }
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (!slotID || slotID.length == 0) {
+      NSLog(@"[Pangle] Banner广告 SlotID 不能为空");
+      return;
+    }
 
-  [self stopAutoRefresh];
-  self.adLoaded = NO;
-  self.bannerAdView = nil;
-  self.bannerView = nil;
-  self.currentSlotID = slotID;
-  self.currentSizeType = sizeType;
-  self.fixedWidth = width;
-  self.fixedHeight = height;
-
-  CGSize cgSize = [self sizeForType:sizeType width:width height:height];
-
-  BUSize *size = [[BUSize alloc] init];
-  size.width = (NSInteger)cgSize.width;
-  size.height = (NSInteger)cgSize.height;
-
-  BUAdSlot *slot = [[BUAdSlot alloc] init];
-  slot.ID = slotID;
-  slot.position = BUAdSlotPositionBottom;
-  slot.imgSize = size;
-
-  NSLog(@"[Pangle] 开始加载Banner广告, SlotID: %@, Size: %@", slotID,
-        NSStringFromCGSize(cgSize));
-
-  UIViewController *rootVC = [self topViewController];
-  if (!rootVC) {
-    NSError *error = [NSError
-        errorWithDomain:@"com.pangle.banner"
-                   code:1001
-               userInfo:@{NSLocalizedDescriptionKey : @"无法获取根视图控制器"}];
-    NSLog(@"[Pangle] 错误：无法获取根视图控制器");
-    [[NSNotificationCenter defaultCenter]
-        postNotificationName:@"PangleBannerAdLoadFail"
-                      object:@{@"error" : error.localizedDescription}];
+    [self stopAutoRefresh];
+    [self.bannerView removeFromSuperview];
+    self.bannerView = nil;
     self.adLoaded = NO;
-    return;
-  }
-  NSLog(@"[Pangle] 根视图控制器: %@", rootVC);
+    self.bannerAdView.delegate = nil;
+    self.bannerAdView = nil;
+    self.currentSlotID = slotID;
+    self.currentSizeType = sizeType;
+    self.fixedWidth = width;
+    self.fixedHeight = height;
 
-  BUNativeExpressBannerView *bannerView =
-      [[BUNativeExpressBannerView alloc] initWithSlot:slot
-                                   rootViewController:rootVC
-                                               adSize:cgSize];
-  bannerView.delegate = self;
-  self.bannerAdView = bannerView;
-  
-  NSLog(@"[Pangle] BannerAd 创建完成，准备调用 loadAdData");
-  [bannerView loadAdData];
-  NSLog(@"[Pangle] BannerAd loadAdData 已调用");
+    CGSize cgSize = [self sizeForType:sizeType width:width height:height];
+
+    BUSize *size = [[BUSize alloc] init];
+    size.width = (NSInteger)cgSize.width;
+    size.height = (NSInteger)cgSize.height;
+
+    BUAdSlot *slot = [[BUAdSlot alloc] init];
+    slot.ID = slotID;
+    slot.position = BUAdSlotPositionBottom;
+    slot.imgSize = size;
+
+    NSLog(@"[Pangle] 开始加载Banner广告, SlotID: %@, Size: %@", slotID,
+          NSStringFromCGSize(cgSize));
+
+    UIViewController *rootVC = [self topViewController];
+    if (!rootVC) {
+      NSError *error = [NSError
+          errorWithDomain:@"com.pangle.banner"
+                     code:1001
+                 userInfo:@{NSLocalizedDescriptionKey : @"无法获取根视图控制器"}];
+      NSLog(@"[Pangle] 错误：无法获取根视图控制器");
+      [[NSNotificationCenter defaultCenter]
+          postNotificationName:@"PangleBannerAdLoadFail"
+                        object:@{@"error" : error.localizedDescription}];
+      self.adLoaded = NO;
+      return;
+    }
+    NSLog(@"[Pangle] 根视图控制器: %@", rootVC);
+
+    BUNativeExpressBannerView *bannerView =
+        [[BUNativeExpressBannerView alloc] initWithSlot:slot
+                                     rootViewController:rootVC
+                                                 adSize:cgSize];
+    bannerView.delegate = self;
+    self.bannerAdView = bannerView;
+
+    NSLog(@"[Pangle] BannerAd 创建完成，准备调用 loadAdData");
+    [bannerView loadAdData];
+    NSLog(@"[Pangle] BannerAd loadAdData 已调用");
+  });
 }
 
 - (UIViewController *)topViewController {
@@ -180,77 +184,101 @@
   return [self sizeForType:sizeType width:0 height:0];
 }
 
-- (void)showInView:(UIView *)parentView {
-  if (!self.bannerAdView || !self.adLoaded) {
-    NSLog(@"[Pangle] 尝试展示Banner广告但广告未加载");
+- (void)attachBannerView:(BUNativeExpressBannerView *)bannerView
+            toParentView:(UIView *)parentView {
+  if (!bannerView || !parentView) {
     return;
   }
 
-  if (!parentView) {
-    NSLog(@"[Pangle] parentView 不能为空");
+  if (self.bannerView == bannerView && bannerView.superview == parentView) {
+    [parentView bringSubviewToFront:bannerView];
     return;
   }
-  // 修复：先保存 bannerAdView 的引用，再清除旧的 bannerView
-  BUNativeExpressBannerView *adViewToDisplay = self.bannerAdView;
-  [self removeAd];
-  self.currentParentView = parentView;
-  
-  self.bannerView = adViewToDisplay;
 
-  // 使用 (0, 0) 定位在 parentView 顶部，而不是底部
+  [self.bannerView removeFromSuperview];
+  self.bannerView = bannerView;
+
   CGSize size = [self sizeForType:self.currentSizeType
                             width:self.fixedWidth
                            height:self.fixedHeight];
   self.bannerView.frame = CGRectMake(0, 0, size.width, size.height);
   self.bannerView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
 
-  [parentView addSubview:self.bannerView];
-  
-  // 强制置顶，防止被其他视图遮挡
-  [parentView bringSubviewToFront:self.bannerView];
+  if (bannerView.superview != parentView) {
+    [bannerView removeFromSuperview];
+    [parentView addSubview:bannerView];
+  }
+
+  [parentView bringSubviewToFront:bannerView];
 
   if ([self.delegate respondsToSelector:@selector(bannerAdDidShow:)]) {
-    [self.delegate bannerAdDidShow:adViewToDisplay];
+    [self.delegate bannerAdDidShow:bannerView];
   }
   [[NSNotificationCenter defaultCenter]
       postNotificationName:@"PangleBannerAdShowed"
                     object:nil];
 
-  if (self.refreshInterval > 0) {
+  if (self.refreshInterval > 0 && self.refreshTimer == nil) {
     [self startAutoRefresh];
   }
 }
 
+- (void)showInView:(UIView *)parentView {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (!parentView) {
+      NSLog(@"[Pangle] parentView 不能为空");
+      return;
+    }
+
+    self.currentParentView = parentView;
+
+    if (!self.bannerAdView || !self.adLoaded) {
+      NSLog(@"[Pangle] Banner广告暂未就绪，加载完成后自动展示");
+      return;
+    }
+
+    [self attachBannerView:self.bannerAdView toParentView:parentView];
+  });
+}
+
 - (void)hide {
-  [self stopAutoRefresh];
-  [self.bannerView removeFromSuperview];
-  self.bannerView = nil;
-  self.currentParentView = nil;
-  NSLog(@"[Pangle] Banner广告已隐藏");
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [self stopAutoRefresh];
+    [self.bannerView removeFromSuperview];
+    self.bannerView = nil;
+    self.currentParentView = nil;
+    NSLog(@"[Pangle] Banner广告已隐藏");
+  });
 }
 
 - (void)removeAd {
-  [self stopAutoRefresh];
-  [self.bannerView removeFromSuperview];
-  self.bannerView = nil;
-  self.bannerAdView = nil;
-  self.currentParentView = nil;
-  self.adLoaded = NO;
-  NSLog(@"[Pangle] Banner广告已移除");
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [self stopAutoRefresh];
+    [self.bannerView removeFromSuperview];
+    self.bannerView = nil;
+    self.bannerAdView.delegate = nil;
+    self.bannerAdView = nil;
+    self.currentParentView = nil;
+    self.adLoaded = NO;
+    NSLog(@"[Pangle] Banner广告已移除");
+  });
 }
 
 - (void)startAutoRefresh {
-  [self stopAutoRefresh];
-  if (self.refreshInterval <= 0)
-    return;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [self stopAutoRefresh];
+    if (self.refreshInterval <= 0) {
+      return;
+    }
 
-  NSLog(@"[Pangle] Banner广告开始自动刷新, 间隔: %.0f秒", self.refreshInterval);
-  self.refreshTimer =
-      [NSTimer scheduledTimerWithTimeInterval:self.refreshInterval
-                                       target:self
-                                     selector:@selector(refreshAd)
-                                     userInfo:nil
-                                      repeats:YES];
+    NSLog(@"[Pangle] Banner广告开始自动刷新, 间隔: %.0f秒", self.refreshInterval);
+    self.refreshTimer =
+        [NSTimer scheduledTimerWithTimeInterval:self.refreshInterval
+                                         target:self
+                                       selector:@selector(refreshAd)
+                                       userInfo:nil
+                                        repeats:YES];
+  });
 }
 
 - (void)stopAutoRefresh {
@@ -259,13 +287,15 @@
 }
 
 - (void)refreshAd {
-  if (self.currentSlotID && self.currentSlotID.length > 0) {
-    NSLog(@"[Pangle] Banner广告自动刷新");
-    [self loadAdWithSlotID:self.currentSlotID
-                   sizeType:self.currentSizeType
-                      width:self.fixedWidth
-                     height:self.fixedHeight];
-  }
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (self.currentSlotID && self.currentSlotID.length > 0) {
+      NSLog(@"[Pangle] Banner广告自动刷新");
+      [self loadAdWithSlotID:self.currentSlotID
+                     sizeType:self.currentSizeType
+                        width:self.fixedWidth
+                       height:self.fixedHeight];
+    }
+  });
 }
 
 #pragma mark - BUNativeExpressBannerViewDelegate
@@ -275,7 +305,7 @@
     self.adLoaded = YES;
     UIView *parentView = self.currentParentView;
     if (parentView) {
-        [self showInView:parentView];
+        [self attachBannerView:bannerAdView toParentView:parentView];
     }
     if ([self.delegate respondsToSelector:@selector(bannerAdDidLoadSuccess:)]) {
         [self.delegate bannerAdDidLoadSuccess:bannerAdView];

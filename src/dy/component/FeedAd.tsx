@@ -13,7 +13,11 @@ import React, {
 import { Platform, requireNativeComponent, UIManager } from 'react-native';
 import type { ViewStyle } from 'react-native';
 
-const ComponentName = 'FeedAdViewManager';
+const ComponentName = Platform.select({
+  android: 'FeedAdViewManager',
+  ios: 'FeedAdView',
+  default: 'FeedAdViewManager',
+}) as string;
 
 export interface FeedAdProps {
   codeid: string;
