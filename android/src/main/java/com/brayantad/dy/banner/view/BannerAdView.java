@@ -137,8 +137,15 @@ public class BannerAdView extends RelativeLayout {
     TTNativeExpressAd cachedAd = BannerAdModule.getCachedBannerAd(mCodeId);
     if (cachedAd != null) {
       mBannerAd = cachedAd;
-      showBannerAd(mBannerAd);
       mIsAdLoading = false;
+      bindAdListener(mBannerAd);
+      if (mBannerAd.getExpressAdView() != null) {
+        mHasRenderedAd = true;
+        attachRenderedAdView(mBannerAd.getExpressAdView(), mExpectedWidth, mExpectedHeight);
+        onAdRenderSuccess(mExpectedWidth, mExpectedHeight);
+      } else {
+        showBannerAd(mBannerAd);
+      }
       return;
     }
 
@@ -223,35 +230,7 @@ public class BannerAdView extends RelativeLayout {
         @Override
         public void onRenderSuccess(View view, float width, float height) {
           mHasRenderedAd = true;
-          mExpressContainer.removeAllViews();
-
-          RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(
-            RelativeLayout.LayoutParams.MATCH_PARENT,
-            RelativeLayout.LayoutParams.WRAP_CONTENT
-          );
-          mExpressContainer.addView(view, params);
-
-          // 更新容器高度
-          ViewGroup.LayoutParams containerParams = mExpressContainer.getLayoutParams();
-          if (containerParams != null) {
-            containerParams.height = (int) height;
-            mExpressContainer.setLayoutParams(containerParams);
-          }
-
-          // 更新父视图高度
-          ViewGroup.LayoutParams viewParams = BannerAdView.this.getLayoutParams();
-          if (viewParams != null) {
-            viewParams.height = (int) height;
-            BannerAdView.this.setLayoutParams(viewParams);
-          }
-
-          view.setVisibility(View.VISIBLE);
-          mExpressContainer.setVisibility(View.VISIBLE);
-          BannerAdView.this.setVisibility(View.VISIBLE);
-
-          mExpressContainer.requestLayout();
-          BannerAdView.this.requestLayout();
-
+          attachRenderedAdView(view, (int) width, (int) height);
           onAdRenderSuccess((int) width, (int) height);
         }
       }
@@ -368,5 +347,45 @@ public class BannerAdView extends RelativeLayout {
     }
     RelativeLayout container = findViewById(R.id.feed_container);
     return container != null && container.getChildCount() > 0;
+  }
+
+  private void attachRenderedAdView(View adView, int width, int height) {
+    final RelativeLayout expressContainer = findViewById(R.id.feed_container);
+    if (expressContainer == null || adView == null) {
+      onAdError("feed_container not found");
+      return;
+    }
+
+    expressContainer.removeAllViews();
+    if (adView.getParent() instanceof ViewGroup) {
+      ((ViewGroup) adView.getParent()).removeView(adView);
+    }
+
+    RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(
+      RelativeLayout.LayoutParams.MATCH_PARENT,
+      RelativeLayout.LayoutParams.WRAP_CONTENT
+    );
+    expressContainer.addView(adView, params);
+
+    int effectiveHeight = height > 0 ? height : mExpectedHeight;
+
+    ViewGroup.LayoutParams containerParams = expressContainer.getLayoutParams();
+    if (containerParams != null) {
+      containerParams.height = effectiveHeight;
+      expressContainer.setLayoutParams(containerParams);
+    }
+
+    ViewGroup.LayoutParams viewParams = BannerAdView.this.getLayoutParams();
+    if (viewParams != null) {
+      viewParams.height = effectiveHeight;
+      BannerAdView.this.setLayoutParams(viewParams);
+    }
+
+    adView.setVisibility(View.VISIBLE);
+    expressContainer.setVisibility(View.VISIBLE);
+    BannerAdView.this.setVisibility(View.VISIBLE);
+
+    expressContainer.requestLayout();
+    BannerAdView.this.requestLayout();
   }
 }

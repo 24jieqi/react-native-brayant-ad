@@ -13,6 +13,7 @@ import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableMap;
+import com.facebook.react.bridge.UiThreadUtil;
 
 import java.util.List;
 
@@ -73,7 +74,7 @@ public class BannerAdModule extends ReactContextBaseJavaModule {
     }
 
     // 清除旧缓存
-    clearCache();
+    discardCache();
 
     // 创建广告请求参数
     AdSlot adSlot = new AdSlot.Builder()
@@ -100,11 +101,34 @@ public class BannerAdModule extends ReactContextBaseJavaModule {
             promise.reject(TAG, "preload banner ad: no ad content");
             return;
           }
-          // 缓存广告
-          bannerAdCache = ads.get(0);
-          bannerAdCacheCodeId = codeId;
-          bannerAdCacheTime = System.currentTimeMillis();
-          promise.resolve(true);
+
+          TTNativeExpressAd ad = ads.get(0);
+          UiThreadUtil.runOnUiThread(() -> {
+            ad.setExpressInteractionListener(
+              new TTNativeExpressAd.ExpressAdInteractionListener() {
+                @Override
+                public void onAdClicked(android.view.View view, int type) {}
+
+                @Override
+                public void onAdShow(android.view.View view, int type) {}
+
+                @Override
+                public void onRenderFail(android.view.View view, String msg, int code) {
+                  Log.d(TAG, "preloadBannerAd render error: " + msg);
+                  promise.reject(TAG, "preload banner ad render error: " + msg);
+                }
+
+                @Override
+                public void onRenderSuccess(android.view.View view, float width, float height) {
+                  bannerAdCache = ad;
+                  bannerAdCacheCodeId = codeId;
+                  bannerAdCacheTime = System.currentTimeMillis();
+                  promise.resolve(true);
+                }
+              }
+            );
+            ad.render();
+          });
         }
       }
     );
@@ -130,8 +154,7 @@ public class BannerAdModule extends ReactContextBaseJavaModule {
   public static TTNativeExpressAd getCachedBannerAd(String codeId) {
     if (hasValidCache(codeId)) {
       TTNativeExpressAd cachedAd = bannerAdCache;
-      // 使用后清除缓存，避免重复使用
-      clearCache();
+      consumeCache();
       return cachedAd;
     }
     return null;
@@ -142,7 +165,7 @@ public class BannerAdModule extends ReactContextBaseJavaModule {
    */
   @ReactMethod
   public void clearPreloadedBannerAd() {
-    clearCache();
+    discardCache();
   }
 
   /**
@@ -164,12 +187,16 @@ public class BannerAdModule extends ReactContextBaseJavaModule {
   /**
    * 清除缓存
    */
-  private static void clearCache() {
-    if (bannerAdCache != null) {
-      bannerAdCache.destroy();
-      bannerAdCache = null;
-    }
+  private static void consumeCache() {
+    bannerAdCache = null;
     bannerAdCacheCodeId = null;
     bannerAdCacheTime = 0;
+  }
+
+  private static void discardCache() {
+    if (bannerAdCache != null) {
+      bannerAdCache.destroy();
+    }
+    consumeCache();
   }
 }
