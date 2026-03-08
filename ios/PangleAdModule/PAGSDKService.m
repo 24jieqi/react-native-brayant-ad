@@ -71,7 +71,7 @@
 }
 
 - (BOOL)isInitialized {
-    return [BUAdSDKManager state] == BUAdSDKStateStart;
+    return [BUAdSDKManager initializationState] == BUAdSDKInitializationStateReady;
 }
 
 - (NSString *)SDKVersion {

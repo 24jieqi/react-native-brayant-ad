@@ -104,6 +104,14 @@
     NSLog(@"[Pangle] 开屏广告加载失败: %@", error.localizedDescription);
     self.adLoaded = NO;
     self.splashAd = nil;
+
+    NSDictionary *payload = @{
+        @"message": error.localizedDescription ?: @"广告加载失败",
+        @"code": @(error.code)
+    };
+    [[NSNotificationCenter defaultCenter] postNotificationName:PangleSplashAdLoadFail
+                                                        object:payload];
+
     if (self.completeBlock) {
         self.completeBlock(NO, error);
     }

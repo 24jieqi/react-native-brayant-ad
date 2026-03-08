@@ -13,6 +13,8 @@
 #import <React/RCTLog.h>
 #import <React/RCTUIManager.h>
 
+NSString *const PangleSplashAdLoadFail = @"PangleSplashAdLoadFail";
+
 NSString *const PangleInterstitialAdLoaded = @"PangleInterstitialAdLoaded";
 NSString *const PangleInterstitialAdLoadFail = @"PangleInterstitialAdLoadFail";
 NSString *const PangleInterstitialAdShowed = @"PangleInterstitialAdShowed";
@@ -110,6 +112,7 @@ RCT_EXPORT_METHOD(flushPendingAdClosedEvent) {
 
 - (NSArray<NSString *> *)supportedEvents {
   return @[
+    PangleSplashAdLoadFail,
     @"PangleSplashAdClosed",
     PangleInterstitialAdLoaded,
     PangleInterstitialAdLoadFail,

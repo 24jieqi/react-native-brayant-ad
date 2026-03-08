@@ -9,6 +9,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+extern NSString * const PangleSplashAdLoadFail;
+
 extern NSString * const PangleInterstitialAdLoaded;
 extern NSString * const PangleInterstitialAdLoadFail;
 extern NSString * const PangleInterstitialAdShowed;
@@ -41,6 +43,7 @@ extern NSString * const PangleFeedAdLayout;
 + (instancetype)sharedInstance;
 - (NSArray<NSString *> *)supportedEvents;
 - (void)notifyAdClosed;
+- (void)flushPendingAdClosedEvent;
 
 @end
 
