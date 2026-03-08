@@ -42,14 +42,19 @@
 
     self.appID = appID;
 
-    // 配置 SDK
+    // 注册 AppID，并补齐调试日志级别。
     BUAdSDKConfiguration *config = [BUAdSDKConfiguration configuration];
     config.appID = appID;
 #ifdef DEBUG
     config.debugLog = @(YES);
+    config.SDKDEBUG = YES;
+    [BUAdSDKManager setLoglevel:BUAdSDKLogLevelDebug];
 #else
     config.debugLog = @(NO);
+    config.SDKDEBUG = NO;
+    [BUAdSDKManager setLoglevel:BUAdSDKLogLevelNone];
 #endif
+    [BUAdSDKManager setAppID:appID];
 
     NSLog(@"[Pangle] 开始初始化 SDK, AppID: %@", appID);
 
