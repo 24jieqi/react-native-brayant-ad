@@ -48,14 +48,10 @@
 #ifdef DEBUG
     config.debugLog = @(YES);
     config.SDKDEBUG = YES;
-    [BUAdSDKManager setLoglevel:BUAdSDKLogLevelDebug];
 #else
     config.debugLog = @(NO);
     config.SDKDEBUG = NO;
-    [BUAdSDKManager setLoglevel:BUAdSDKLogLevelNone];
 #endif
-    [BUAdSDKManager setAppID:appID];
-
     NSLog(@"[Pangle] 开始初始化 SDK, AppID: %@", appID);
 
     [BUAdSDKManager startWithAsyncCompletionHandler:^(BOOL success, NSError * _Nullable error) {
@@ -76,7 +72,7 @@
 }
 
 - (BOOL)isInitialized {
-    return [BUAdSDKManager initializationState] == BUAdSDKInitializationStateReady;
+    return [BUAdSDKManager state] == BUAdSDKStateStart;
 }
 
 - (NSString *)SDKVersion {
