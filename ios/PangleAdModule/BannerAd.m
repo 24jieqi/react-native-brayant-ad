@@ -9,6 +9,7 @@
 #import <BUAdSDK/BUAdSlot.h>
 #import <BUAdSDK/BUNativeExpressBannerView.h>
 #import <BUAdSDK/BUSize.h>
+#import <math.h>
 
 @interface BannerAd () <BUNativeExpressBannerViewDelegate>
 
@@ -16,6 +17,7 @@
 @property(nonatomic, strong) UIView *bannerView;
 @property(nonatomic, strong) NSTimer *refreshTimer;
 @property(nonatomic, assign) BOOL adLoaded;
+@property(nonatomic, assign) BOOL adRendered;
 @property(nonatomic, copy) NSString *currentSlotID;
 @property(nonatomic, assign) BannerAdSizeType currentSizeType;
 @property(nonatomic, assign) double fixedWidth;
@@ -40,6 +42,7 @@
   if (self) {
     _refreshInterval = 0;
     _adLoaded = NO;
+    _adRendered = NO;
   }
   return self;
 }
@@ -63,10 +66,29 @@
       return;
     }
 
+    BOOL sameSlot =
+        self.currentSlotID != nil && [self.currentSlotID isEqualToString:slotID];
+    BOOL sameConfig = sameSlot && self.currentSizeType == sizeType &&
+                      fabs(self.fixedWidth - width) < 0.1 &&
+                      fabs(self.fixedHeight - height) < 0.1;
+    if (sameConfig && self.bannerAdView != nil && self.adLoaded) {
+      [[NSNotificationCenter defaultCenter]
+          postNotificationName:@"PangleBannerAdLoaded"
+                        object:nil];
+
+      if (self.adRendered) {
+        [[NSNotificationCenter defaultCenter]
+            postNotificationName:@"PangleBannerAdRenderSuccess"
+                          object:nil];
+      }
+      return;
+    }
+
     [self stopAutoRefresh];
     [self.bannerView removeFromSuperview];
     self.bannerView = nil;
     self.adLoaded = NO;
+    self.adRendered = NO;
     self.bannerAdView.delegate = nil;
     self.bannerAdView = nil;
     self.currentSlotID = slotID;
@@ -247,6 +269,7 @@
     [self.bannerView removeFromSuperview];
     self.bannerView = nil;
     self.currentParentView = nil;
+    self.adRendered = NO;
     NSLog(@"[Pangle] Banner广告已隐藏");
   });
 }
@@ -260,6 +283,7 @@
     self.bannerAdView = nil;
     self.currentParentView = nil;
     self.adLoaded = NO;
+    self.adRendered = NO;
     NSLog(@"[Pangle] Banner广告已移除");
   });
 }
@@ -303,6 +327,7 @@
 - (void)nativeExpressBannerAdViewDidLoad:(BUNativeExpressBannerView *)bannerAdView {
     NSLog(@"[Pangle] Banner广告加载成功");
     self.adLoaded = YES;
+    self.adRendered = NO;
     UIView *parentView = self.currentParentView;
     if (parentView) {
         [self attachBannerView:bannerAdView toParentView:parentView];
@@ -325,6 +350,7 @@
 - (void)nativeExpressBannerAdViewRenderSuccess:
     (BUNativeExpressBannerView *)bannerAdView {
   NSLog(@"[Pangle] Banner广告渲染成功");
+  self.adRendered = YES;
   // 发送渲染成功事件给 React Native
   [[NSNotificationCenter defaultCenter]
       postNotificationName:@"PangleBannerAdRenderSuccess"
@@ -335,6 +361,7 @@
             (BUNativeExpressBannerView *)bannerAdView
                                       error:(NSError *)error {
   NSLog(@"[Pangle] Banner广告渲染失败: %@", error.localizedDescription);
+  self.adRendered = NO;
 }
 
 - (void)nativeExpressBannerAdViewDidClick:(BUNativeExpressBannerView *)bannerAdView {
@@ -349,6 +376,7 @@
     (BUNativeExpressBannerView *)bannerAdView {
   NSLog(@"[Pangle] Banner广告关闭");
   self.adLoaded = NO;
+  self.adRendered = NO;
 
   [self removeAd];
 
