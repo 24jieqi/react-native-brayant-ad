@@ -2,27 +2,49 @@
 
 React Native 国内广告 SDK 封装，当前主要集成穿山甲（Pangle / Ads-CN）。
 
-最近这轮重构后，文档口径以当前代码为准：
+支持能力：
 
-- iOS 端广告能力统一由 `PangleAdModule` 承接
-- `BannerAdView` 已支持 Android / iOS 同参接入
-- Feed 信息流推荐走 `preloadFeedAd + FeedAdView` 的声明式渲染方案
-- 业务侧推荐自行封装一层“初始化、预加载、占位态、会员免广告、事件归一化”的组件
+- 开屏广告
+- 激励视频
+- 全屏视频
+- 插屏广告
+- Feed 信息流
+- Draw 信息流
+- Banner
 
-## 功能一览
+当前实现口径：
 
-| 能力 | 导出名 | Android | iOS | 说明 |
+- Android 与 iOS 都可使用同一个 npm 包接入
+- iOS 广告能力统一通过 `PangleAdModule` 承接
+- Feed / Banner 推荐使用声明式组件方式接入
+- Draw 信息流当前仅支持 Android
+
+## 目录
+
+- [功能支持](#功能支持)
+- [安装](#安装)
+- [原生配置](#原生配置)
+- [3 分钟快速开始](#3-分钟快速开始)
+- [API 说明](#api-说明)
+- [常见问题](#常见问题)
+- [本地开发](#本地开发)
+
+## 功能支持
+
+| 能力 | 导出名 | Android | iOS | 备注 |
 | --- | --- | --- | --- | --- |
-| SDK 初始化 | `init` | ✅ | ✅ | iOS 仅使用 `appid` 初始化 Pangle |
+| SDK 初始化 | `init` | ✅ | ✅ | iOS 初始化仅依赖 `appid` |
 | 权限请求 | `requestPermission` | ✅ | ✅ | Android 请求权限，iOS 请求 ATT |
-| 开屏广告 | `dyLoadSplashAd` | ✅ | ✅ | 支持事件监听与 `cleanup()` |
-| 开屏预加载 | `preloadSplashAd` / `hasPreloadedSplashAd` / `clearPreloadedSplashAd` | ✅ | ✅ / ✅ / noop | iOS 的 `clearPreloadedSplashAd` 当前无实际清理逻辑 |
-| 激励视频 | `startRewardVideo` | ✅ | ✅ | iOS 当前复用插屏链路 |
-| 全屏视频 | `startFullScreenVideo` | ✅ | ✅ | iOS 当前复用插屏链路 |
+| 开屏广告 | `dyLoadSplashAd` | ✅ | ✅ | 支持预加载辅助方法 |
+| 开屏预加载 | `preloadSplashAd` | ✅ | ✅ | iOS 为兼容实现 |
+| 开屏缓存检测 | `hasPreloadedSplashAd` | ✅ | ✅ | 用于判断是否可直接展示 |
+| 开屏缓存清理 | `clearPreloadedSplashAd` | ✅ | ✅ | iOS 当前为 noop |
+| 激励视频 | `startRewardVideo` | ✅ | ✅ | iOS 当前复用插屏展示链路 |
+| 全屏视频 | `startFullScreenVideo` | ✅ | ✅ | iOS 当前复用插屏展示链路 |
 | 插屏广告 | `startInterstitialAd` | ✅ | ✅ | Android 复用全屏视频通道 |
-| Feed 信息流 | `preloadFeedAd` / `FeedAdView` | ✅ | ✅ | 推荐声明式组件接入 |
+| Feed 信息流 | `preloadFeedAd` / `FeedAdView` | ✅ | ✅ | 推荐方式 |
 | Draw 信息流 | `loadDrawFeedAd` / `DrawFeedView` | ✅ | ❌ | 仅 Android |
-| Banner | `BannerAdView` | ✅ | ✅ | 推荐直接组件渲染 |
+| Banner | `BannerAdView` | ✅ | ✅ | Android / iOS 同参接入 |
 
 ## 安装
 
@@ -34,7 +56,11 @@ npm i @24jieqi/react-native-brayant-ad
 yarn add @24jieqi/react-native-brayant-ad
 ```
 
-iOS 安装 Pod：
+安装后重新编译工程，不要只做热更新。
+
+### iOS
+
+在宿主 App 的 `ios` 目录执行：
 
 ```bash
 cd ios && pod install
@@ -42,7 +68,7 @@ cd ios && pod install
 
 ## 原生配置
 
-### Android Maven 仓库
+### Android
 
 在宿主 App 的 `android/build.gradle` 或统一仓库配置中加入：
 
@@ -56,9 +82,9 @@ allprojects {
 }
 ```
 
-### iOS ATT 权限说明
+### iOS
 
-如果业务会调用 `requestPermission()`，请在 `Info.plist` 中声明：
+如果业务需要调用 `requestPermission()` 请求 ATT，请在宿主 App 的 `Info.plist` 中声明：
 
 ```xml
 <key>NSUserTrackingUsageDescription</key>
@@ -67,19 +93,17 @@ allprojects {
 
 说明：
 
-- Podspec 已内置 `Ads-CN` 依赖，宿主侧通常不需要额外手动引入穿山甲 iOS SDK
-- iOS 初始化实际调用 `PangleAdModule.initialize(appid)`
+- 当前 Podspec 已内置 `Ads-CN`
+- 宿主侧通常不需要再手动单独引入穿山甲 iOS SDK
+- iOS 侧广告在运行前必须先完成 `init({ appid })`
 
-## 推荐接入顺序
+## 3 分钟快速开始
 
-结合当前 iOS 实现与业务侧封装方式，推荐顺序如下：
+如果你只想先把 SDK 跑起来，按下面 4 步做即可。
 
-1. App 启动后尽早调用一次 `init`
-2. 在需要展示前做预加载
-3. Feed / Banner 统一通过组件渲染，不再自己维护原生容器
-4. 开屏 / 激励 / 全屏 / 插屏这类命令式广告，在页面卸载或流程结束时调用 `cleanup()`
+### 1. 初始化 SDK
 
-一个最小可用初始化示例：
+建议在 App 启动后尽早执行一次，并且只执行一次。
 
 ```tsx
 import { init, requestPermission } from '@24jieqi/react-native-brayant-ad';
@@ -98,32 +122,105 @@ export async function setupAdSDK() {
 }
 ```
 
-`init` 参数说明：
+### 2. 预加载 Feed 广告
+
+```tsx
+import { preloadFeedAd } from '@24jieqi/react-native-brayant-ad';
+
+await preloadFeedAd({
+  codeid: '你的 Feed 广告位',
+  adWidth: 375,
+});
+```
+
+### 3. 渲染 Feed 广告组件
+
+```tsx
+import { FeedAdView } from '@24jieqi/react-native-brayant-ad';
+
+<FeedAdView
+  codeid="你的 Feed 广告位"
+  adWidth={375}
+  visible={true}
+  onAdLayout={(event) => {
+    console.log('广告渲染成功', event);
+  }}
+  onAdError={(event) => {
+    console.log('广告加载失败', event);
+  }}
+/>
+```
+
+### 4. 命令式广告记得释放监听
+
+开屏、激励、全屏、插屏这类 API 都会返回广告实例。使用完成后记得调用 `cleanup()`，避免监听重复触发。
+
+```tsx
+import { startInterstitialAd } from '@24jieqi/react-native-brayant-ad';
+
+const ad = startInterstitialAd({ codeid: '你的插屏广告位' });
+
+try {
+  await ad.result;
+} finally {
+  ad.cleanup();
+}
+```
+
+## API 说明
+
+### `init`
+
+初始化广告 SDK。
+
+```tsx
+import { init } from '@24jieqi/react-native-brayant-ad';
+
+await init({
+  appid: '你的穿山甲 appid',
+  app: '你的应用名',
+  uid: '用户 ID',
+  amount: 1000,
+  reward: '金币',
+  debug: false,
+});
+```
+
+参数：
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `appid` | `string` | 是 | 穿山甲应用 ID |
-| `app` | `string` | 否 | 应用名，仅 Android 侧会继续使用 |
+| `app` | `string` | 否 | 应用名 |
 | `uid` | `string` | 否 | 用户标识 |
 | `amount` | `number` | 否 | 激励数量 |
 | `reward` | `string` | 否 | 激励名称 |
 | `debug` | `boolean` | 否 | 调试模式 |
 
-## 推荐业务封装
+建议：
 
-当前库更适合作为“广告桥接层”，业务侧建议再包一层：
+- 整个 App 生命周期内只初始化一次
+- iOS 广告展示前必须完成初始化
 
-- 初始化守卫：确保 SDK 只初始化一次
-- 预加载去重：避免短时间重复请求同一广告位
-- 占位态控制：广告超时或失败时快速隐藏骨架屏
-- 权益控制：会员、首登用户、免广告用户直接不渲染
-- 事件归一化：把原生事件统一为 `onAdLoaded/onAdShow/onAdError/onAdClose`
+### `requestPermission`
 
-Feed / Banner 的新用法建议都基于这个思路实现。
+请求广告相关权限。
 
-## 开屏广告
+```tsx
+import { requestPermission } from '@24jieqi/react-native-brayant-ad';
 
-### 导入
+requestPermission();
+```
+
+说明：
+
+- Android 会调用原生权限请求
+- iOS 会请求 ATT 授权
+- 如果 iOS 没配置 `NSUserTrackingUsageDescription`，调用时会有问题
+
+### 开屏广告
+
+导入：
 
 ```tsx
 import {
@@ -134,25 +231,21 @@ import {
 } from '@24jieqi/react-native-brayant-ad';
 ```
 
-### 预加载
+#### 预加载
 
 ```tsx
-await preloadSplashAd({ codeid: '你的开屏广告位' });
+await preloadSplashAd({
+  codeid: '你的开屏广告位',
+});
 
-const preloadState = await hasPreloadedSplashAd();
+const state = await hasPreloadedSplashAd();
 
-if (preloadState.hasAd) {
-  console.log('开屏广告已就绪', preloadState.status);
+if (state.hasAd) {
+  console.log('开屏广告已可展示');
 }
 ```
 
-说明：
-
-- Android 会走原生预加载缓存
-- iOS 会提前触发 `loadSplashAd`
-- `clearPreloadedSplashAd()` 在 Android 有效，iOS 当前为 noop
-
-### 展示
+#### 展示
 
 ```tsx
 const splash = dyLoadSplashAd({
@@ -161,7 +254,7 @@ const splash = dyLoadSplashAd({
 });
 
 splash.subscribe('onAdShow', () => {
-  console.log('开屏开始展示');
+  console.log('开屏展示');
 });
 
 splash.subscribe('onAdClick', () => {
@@ -176,18 +269,19 @@ splash.subscribe('onAdError', (error) => {
   console.log('开屏失败', error);
 });
 
-await splash.result;
-
-// 流程结束后
-splash.cleanup();
+try {
+  await splash.result;
+} finally {
+  splash.cleanup();
+}
 ```
 
-`dyLoadSplashAd` 参数：
+参数：
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `codeid` | `string` | 是 | 开屏广告位 ID |
-| `anim` | `'default' \| 'none' \| 'catalyst' \| 'slide' \| 'fade'` | 否 | Android 开屏动画风格 |
+| `anim` | `'default' \| 'none' \| 'catalyst' \| 'slide' \| 'fade'` | 否 | Android 开屏动画 |
 
 支持事件：
 
@@ -201,20 +295,21 @@ splash.cleanup();
 
 说明：
 
-- iOS 当前主要可靠事件是 `onAdClose`
-- 业务侧若对启动流程有更强控制，建议自己封装“预加载 + ready 检查 + 超时兜底”
+- Android 推荐先 `preloadSplashAd` 再展示
+- iOS 当前主要可靠关闭事件为 `onAdClose`
+- `clearPreloadedSplashAd()` 在 Android 有意义，iOS 当前无实际清理逻辑
 
-## 激励视频
+### 激励视频
 
 ```tsx
 import { startRewardVideo } from '@24jieqi/react-native-brayant-ad';
 
 const reward = startRewardVideo({
-  codeid: '你的激励视频广告位',
+  codeid: '你的激励广告位',
 });
 
 reward.subscribe('onAdLoaded', () => {
-  console.log('激励广告已展示');
+  console.log('激励广告已就绪或已展示');
 });
 
 reward.subscribe('onAdClick', () => {
@@ -229,16 +324,19 @@ reward.subscribe('onAdError', (error) => {
   console.log('激励广告失败', error);
 });
 
-await reward.result;
-reward.cleanup();
+try {
+  await reward.result;
+} finally {
+  reward.cleanup();
+}
 ```
 
 说明：
 
 - Android 走独立激励视频模块
-- iOS 当前实现复用 `PangleAdModule` 的插屏加载与展示链路，事件接口保持一致
+- iOS 当前实现复用插屏链路
 
-## 全屏视频
+### 全屏视频
 
 ```tsx
 import { startFullScreenVideo } from '@24jieqi/react-native-brayant-ad';
@@ -250,7 +348,7 @@ const full = startFullScreenVideo({
 });
 
 full.subscribe('onAdLoaded', () => {
-  console.log('全屏视频已展示');
+  console.log('全屏视频已就绪或已展示');
 });
 
 full.subscribe('onAdClick', () => {
@@ -265,8 +363,11 @@ full.subscribe('onAdError', (error) => {
   console.log('全屏视频失败', error);
 });
 
-await full.result;
-full.cleanup();
+try {
+  await full.result;
+} finally {
+  full.cleanup();
+}
 ```
 
 参数：
@@ -274,10 +375,10 @@ full.cleanup();
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `codeid` | `string` | 是 | 广告位 ID |
-| `orientation` | `'HORIZONTAL' \| 'VERTICAL'` | 否 | Android 方向参数 |
+| `orientation` | `'HORIZONTAL' \| 'VERTICAL'` | 否 | Android 广告方向 |
 | `provider` | `'头条' \| '腾讯' \| '快手'` | 否 | Android 广告源 |
 
-## 插屏广告
+### 插屏广告
 
 ```tsx
 import { startInterstitialAd } from '@24jieqi/react-native-brayant-ad';
@@ -289,35 +390,38 @@ const interstitial = startInterstitialAd({
 });
 
 interstitial.subscribe('onAdLoaded', () => {
-  console.log('插屏已展示');
+  console.log('插屏广告已就绪或已展示');
 });
 
 interstitial.subscribe('onAdClick', () => {
-  console.log('插屏点击');
+  console.log('插屏广告点击');
 });
 
 interstitial.subscribe('onAdClose', () => {
-  console.log('插屏关闭');
+  console.log('插屏广告关闭');
 });
 
 interstitial.subscribe('onAdError', (error) => {
-  console.log('插屏失败', error);
+  console.log('插屏广告失败', error);
 });
 
-await interstitial.result;
-interstitial.cleanup();
+try {
+  await interstitial.result;
+} finally {
+  interstitial.cleanup();
+}
 ```
 
 说明：
 
-- iOS 通过 `PangleAdModule.loadInterstitialAd -> isInterstitialAdReady -> showInterstitialAd` 完成展示
+- iOS 通过 `loadInterstitialAd -> isInterstitialAdReady -> showInterstitialAd` 展示
 - Android 当前复用全屏视频模块通道
 
-## Feed 信息流
+### Feed 信息流
 
-这是当前最推荐的接入方式。
+推荐组合：`preloadFeedAd + FeedAdView`
 
-### 预加载
+#### 预加载
 
 ```tsx
 import { preloadFeedAd } from '@24jieqi/react-native-brayant-ad';
@@ -328,12 +432,7 @@ await preloadFeedAd({
 });
 ```
 
-说明：
-
-- Android 会走原生预加载
-- iOS 会直接触发 `loadExpressNativeAdWithAdSize`
-
-### 组件渲染
+#### 组件
 
 ```tsx
 import { FeedAdView } from '@24jieqi/react-native-brayant-ad';
@@ -343,40 +442,42 @@ import { FeedAdView } from '@24jieqi/react-native-brayant-ad';
   adWidth={375}
   visible={true}
   onAdLayout={(event) => {
-    console.log('信息流渲染完成', event);
+    console.log('Feed 广告渲染完成', event);
   }}
   onAdError={(event) => {
-    console.log('信息流加载失败', event);
+    console.log('Feed 广告失败', event);
   }}
   onAdClick={(event) => {
-    console.log('信息流点击', event);
+    console.log('Feed 广告点击', event);
   }}
   onAdClose={(event) => {
-    console.log('信息流关闭', event);
+    console.log('Feed 广告关闭', event);
   }}
 />
 ```
 
-`FeedAdView` 参数：
+参数：
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `codeid` | `string` | 是 | 广告位 ID |
-| `adWidth` | `number` | 否 | 广告展示宽度，默认 `375` |
+| `adWidth` | `number` | 否 | 广告宽度，默认 `375` |
 | `visible` | `boolean` | 否 | 是否显示，默认 `true` |
-| `style` | `ViewStyle` | 否 | 外层容器样式 |
-| `onAdLayout` | `(event) => void` | 否 | 渲染完成回调，通常拿它作为加载成功信号 |
-| `onAdError` | `(event) => void` | 否 | 加载失败 |
-| `onAdClick` | `(event) => void` | 否 | 点击 |
-| `onAdClose` | `(event) => void` | 否 | 关闭 |
+| `style` | `ViewStyle` | 否 | 容器样式 |
+| `onAdLayout` | `(event) => void` | 否 | 广告布局完成回调 |
+| `onAdError` | `(event) => void` | 否 | 广告失败回调 |
+| `onAdClick` | `(event) => void` | 否 | 点击回调 |
+| `onAdClose` | `(event) => void` | 否 | 关闭回调 |
 
 接入建议：
 
-- 传入真实容器宽度，不要写死过大的 `adWidth`
-- 业务侧把 `onAdLayout` 当成“广告真正可展示”的信号
-- 可以配合骨架屏、淡入动画、预加载去重一起使用
+- `adWidth` 请传实际容器宽度
+- 建议把 `onAdLayout` 作为“广告可显示”的信号
+- 建议业务侧自行补一层骨架屏、超时控制、会员免广告逻辑
 
-## Draw 信息流（仅 Android）
+### Draw 信息流
+
+当前仅支持 Android。
 
 ```tsx
 import { DrawFeedView, loadDrawFeedAd } from '@24jieqi/react-native-brayant-ad';
@@ -397,7 +498,7 @@ loadDrawFeedAd({
     console.log('Draw 广告点击', event);
   }}
   onAdError={(event) => {
-    console.log('Draw 广告错误', event);
+    console.log('Draw 广告失败', event);
   }}
 />
 ```
@@ -405,11 +506,11 @@ loadDrawFeedAd({
 说明：
 
 - 仅 Android 可用
-- `appid` 目前主要用于兼容历史调用方式，业务接入时仍建议保留传参
+- 当前类型定义中 `appid` 仍为必传，示例中请保留
 
-## Banner
+### Banner
 
-`BannerAdView` 现在支持 Android / iOS 共用同一套组件参数。
+`BannerAdView` 在 Android / iOS 使用同一套参数。
 
 ```tsx
 import { BannerAdView } from '@24jieqi/react-native-brayant-ad';
@@ -432,7 +533,7 @@ import { BannerAdView } from '@24jieqi/react-native-brayant-ad';
     console.log('Banner 关闭', event);
   }}
   onAdError={(event) => {
-    console.log('Banner 加载失败', event);
+    console.log('Banner 失败', event);
   }}
   onAdDislike={(event) => {
     console.log('Banner 不感兴趣', event);
@@ -440,7 +541,7 @@ import { BannerAdView } from '@24jieqi/react-native-brayant-ad';
 />
 ```
 
-`BannerAdView` 参数：
+参数：
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
@@ -449,7 +550,7 @@ import { BannerAdView } from '@24jieqi/react-native-brayant-ad';
 | `adHeight` | `number` | 否 | 高度，默认 `50` |
 | `visible` | `boolean` | 否 | 是否显示，默认 `true` |
 | `style` | `ViewStyle` | 否 | 容器样式 |
-| `onAdRenderSuccess` | `(event) => void` | 否 | 渲染成功 |
+| `onAdRenderSuccess` | `(event) => void` | 否 | 渲染完成 |
 | `onAdError` | `(event) => void` | 否 | 加载失败 |
 | `onAdDismiss` | `(event) => void` | 否 | 关闭 |
 | `onAdClick` | `(event) => void` | 否 | 点击 |
@@ -458,11 +559,11 @@ import { BannerAdView } from '@24jieqi/react-native-brayant-ad';
 
 说明：
 
-- iOS 内部会先加载 Banner，再根据容器 `tag` 调用原生展示
-- iOS 当前没有独立的 `onAdDislike` 语义，业务上不要依赖它
-- 推荐在业务侧自行做占位态与渐显，而不是把 Banner 区域直接闪出来
+- iOS 内部会先加载，再根据组件容器展示 Banner
+- iOS 当前不要依赖 `onAdDislike`
+- 建议业务侧自己做占位态和渐显，体验更稳定
 
-## 广告相关导出
+### 导出清单
 
 ```ts
 import {
@@ -486,28 +587,40 @@ import {
 
 ## 常见问题
 
-### 1. 提示 `doesn't seem to be linked`
+### 提示 `doesn't seem to be linked`
 
-- 确认安装依赖后已经重新编译 App
-- iOS 确认执行过 `pod install`
-- 确认当前不是 Expo Go 环境
+检查下面 3 件事：
 
-### 2. iOS 广告不展示
+1. 安装依赖后是否重新编译了 App
+2. iOS 是否执行过 `pod install`
+3. 是否运行在 Expo Go 中
 
-- 先确认 `init({ appid })` 已执行且成功
-- 如果调用了 `requestPermission()`，确认 `Info.plist` 已配置 `NSUserTrackingUsageDescription`
-- Feed / Banner 建议先走预加载，再挂载组件
+### iOS 广告不展示
 
-### 3. 开屏广告白屏或超时
+按顺序检查：
 
-- 启动后尽早调用 `preloadSplashAd`
-- 业务侧增加 ready 检查和超时兜底
-- Android 用完后可调用 `clearPreloadedSplashAd()`
+1. 是否已经调用过 `init({ appid })`
+2. `appid` 和广告位 ID 是否是 iOS 对应的真实值
+3. 如果调用了 `requestPermission()`，`Info.plist` 是否已配置 `NSUserTrackingUsageDescription`
+4. Feed / Banner 是否在初始化完成后再渲染
 
-### 4. 事件重复触发或内存泄漏
+### 开屏广告白屏或超时
 
-- 每次命令式广告实例使用完成后调用 `cleanup()`
-- 避免在同一实例上重复绑定同一事件
+建议：
+
+1. App 启动后尽早 `preloadSplashAd`
+2. 展示前用 `hasPreloadedSplashAd()` 判断
+3. 业务侧补一层超时兜底
+4. Android 使用后可调用 `clearPreloadedSplashAd()`
+
+### 事件重复触发
+
+最常见原因是旧实例没释放。
+
+处理方式：
+
+1. 命令式广告使用完成后调用 `cleanup()`
+2. 避免在同一个实例上重复 `subscribe`
 
 ## 本地开发
 
@@ -518,7 +631,7 @@ pnpm test
 pnpm prepare
 ```
 
-如果修改了 `src/`、`ios/`、`android/` 中的实现，发布或联调前建议至少执行：
+如果修改了 `src/`、`ios/`、`android/` 中的实现，联调前建议至少执行：
 
 ```bash
 pnpm prepare
