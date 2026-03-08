@@ -36,6 +36,7 @@ typedef NS_ENUM(NSInteger, BannerAdSizeType) {
 
 - (void)loadAdWithSlotID:(NSString *)slotID sizeType:(BannerAdSizeType)sizeType;
 - (void)loadAdWithSlotID:(NSString *)slotID sizeType:(BannerAdSizeType)sizeType width:(double)width height:(double)height;
+- (BOOL)isReadyForSlotID:(NSString *)slotID sizeType:(BannerAdSizeType)sizeType width:(double)width height:(double)height;
 - (void)showInView:(UIView *)parentView;
 - (void)hide;
 - (void)removeAd;

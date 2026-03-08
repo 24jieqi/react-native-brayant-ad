@@ -206,6 +206,20 @@
   return [self sizeForType:sizeType width:0 height:0];
 }
 
+- (BOOL)isReadyForSlotID:(NSString *)slotID
+                sizeType:(BannerAdSizeType)sizeType
+                   width:(double)width
+                  height:(double)height {
+  BOOL sameSlot =
+      self.currentSlotID != nil && [self.currentSlotID isEqualToString:slotID];
+  BOOL sameConfig = sameSlot && self.currentSizeType == sizeType &&
+                    fabs(self.fixedWidth - width) < 0.1 &&
+                    fabs(self.fixedHeight - height) < 0.1;
+
+  return sameConfig && self.bannerAdView != nil && self.adLoaded &&
+         self.adRendered;
+}
+
 - (void)attachBannerView:(BUNativeExpressBannerView *)bannerView
             toParentView:(UIView *)parentView {
   if (!bannerView || !parentView) {

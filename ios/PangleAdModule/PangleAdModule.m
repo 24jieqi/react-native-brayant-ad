@@ -312,6 +312,16 @@ RCT_EXPORT_METHOD(loadBannerAdWithSize : (NSString *)slotID sizeType : (
                                        height:height];
 }
 
+RCT_EXPORT_METHOD(isBannerAdReadyWithSize : (NSString *)slotID sizeType : (
+    NSInteger)sizeType width : (double)width height : (double)height resolver : (
+    RCTPromiseResolveBlock)resolve rejecter : (RCTPromiseRejectBlock)reject) {
+  BOOL ready = [[BannerAd sharedInstance] isReadyForSlotID:slotID
+                                                  sizeType:(BannerAdSizeType)sizeType
+                                                     width:width
+                                                    height:height];
+  resolve(@(ready));
+}
+
 RCT_EXPORT_METHOD(showBannerAd : (nonnull NSNumber *)reactTag resolver : (
     RCTPromiseResolveBlock)resolve rejecter : (RCTPromiseRejectBlock)reject) {
   dispatch_async(dispatch_get_main_queue(), ^{
