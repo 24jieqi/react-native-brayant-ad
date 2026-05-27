@@ -82,7 +82,7 @@ repositories {
 
 
 dependencies {
-    implementation 'com.pangle.cn:ads-sdk-pro:7.3.0.8'
+    implementation 'com.pangle.cn:ads-sdk-pro:7.6.1.2'
     implementation 'com.squareup.okhttp3:okhttp:3.12.1'
 
     // React Native dependencies (compileOnly for library usage)
@@ -96,5 +96,4 @@ dependencies {
 
     implementation "com.github.bumptech.glide:glide:4.11.0"
 }
-
 

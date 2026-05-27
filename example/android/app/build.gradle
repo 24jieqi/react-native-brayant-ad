@@ -114,5 +114,4 @@ dependencies {
         implementation jscFlavor
     }
 
- //  implementation 'com.pangle.cn:ads-sdk-pro:6.1.0.7'
 }
