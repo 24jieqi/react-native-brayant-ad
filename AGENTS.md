@@ -1,76 +1,115 @@
-# 语言规范
+# react-native-brayant-ad Agent 指南
 
-- 所有对话和文档都使用中文
+本文档使用渐进式披露：先读“必须遵守”和“常用命令”，开始工作；只有在涉及对应代码时，再展开后续细节。
 
-# Agent Guidelines for react-native-brayant-ad
+## 0. 必须遵守
 
-This file provides guidelines for AI agents working on this React Native ad SDK library.
+- 所有对话、提交说明、文档和注释默认使用中文。
+- 修改 `src/` 后必须运行 `pnpm prepare`，因为库产物由 `react-native-builder-bob` 生成到 `lib/`。
+- 不要用 `as any`、`@ts-ignore`、`@ts-expect-error` 压制类型错误；先修正类型设计。
+- TypeScript 启用严格模式和 `verbatimModuleSyntax`，类型导入必须写成 `import type`。
+- 调用原生模块或原生组件前，必须保留未链接时的 `LINKING_ERROR` 检查模式。
+- 平台差异必须显式判断，尤其是仅 Android 可用的广告能力。
+- 事件监听要复用现有 listener cache 模式，避免同一事件重复订阅。
 
-## Build & Test Commands
+## 1. 常用命令
+
+优先使用 `pnpm` 脚本；只有需要排查脚本本身时才直接调用底层命令。
 
 ```bash
-# Type checking
-pnpm typecheck          # Run TypeScript compiler without emit
-tsc --noEmit
+# 类型检查
+pnpm typecheck
 
-# Linting
-pnpm lint              # Run ESLint on all JS/TS/TSX files
-eslint "**/*.{js,ts,tsx}"
+# Lint
+pnpm lint
 
-# Testing
-pnpm test               # Run all Jest tests
-jest                    # Alternative command
-jest src/__tests__/index.test.tsx  # Run single test file
+# 测试
+pnpm test
+jest src/__tests__/index.test.tsx
 
-# Build
-pnpm prepare            # Build library with react-native-builder-bob
-pnpm clean              # Remove build artifacts
+# 构建库产物
+pnpm prepare
+pnpm clean
 
-# Development
-pnpm example            # Run workspace example app
+# 示例应用
+pnpm example
+pnpm example start
 ```
 
-## Code Style Guidelines
+## 2. 修改代码时的最小流程
 
-### Formatting (Prettier)
+1. 先定位影响范围：公共 API 看 `src/index.tsx`，广告 API 看 `src/dy/api/`，视图组件看 `src/dy/component/`。
+2. 保持现有导入、命名、事件和平台判断模式。
+3. 修改 `src/` 后运行 `pnpm prepare`。
+4. 至少运行 `pnpm typecheck`；涉及行为变更时再运行 `pnpm test` 和 `pnpm lint`。
+5. 需要手动验证时，启动示例应用并在模拟器或真机中重载。
 
-- **Single quotes**: `'string'` not `"string"`
-- **Tab width**: 2 spaces (no tabs)
-- **Trailing comma**: ES5 compatible
-- **Quote props**: consistent
-- Config in package.json under `prettier` and `eslintConfig.rules.prettier/prettier`
+## 3. 项目结构速览
 
-### TypeScript Configuration
+```text
+src/
+├── index.tsx                    # 主入口，导出公共 API
+├── dy/
+│   ├── api/                     # 各广告类型 API
+│   │   ├── AdManager.ts         # 初始化、权限等核心能力
+│   │   ├── SplashAd.ts          # 开屏广告
+│   │   ├── RewardVideo.ts       # 激励视频
+│   │   ├── FullScreenVideo.ts   # 全屏视频
+│   │   └── InterstitialAd.ts    # 插屏广告
+│   └── component/               # React Native 原生视图封装
+│       ├── BannerAd.tsx
+│       ├── FeedAd.tsx
+│       └── DrawFeedAd.tsx
+└── __tests__/
+    └── index.test.tsx
+```
 
-- **Strict mode enabled**: All type checking rules active
-- **verbatimModuleSyntax**: Use explicit `import type` for type-only imports
-- **noUncheckedIndexedAccess**: Objects may be undefined on index access
-- **noUnusedLocals/Parameters**: All locals/params must be used
-- Module system: `esnext`, target: `esnext`, jsx: `react`
+示例应用入口通常在 `example/src/App.tsx`，信息流示例在 `example/src/DrawFeedViewDemo.tsx`。
 
-### Import Patterns
+## 4. 代码风格
+
+### 4.1 格式化
+
+Prettier 配置在 `package.json` 中，核心规则：
+
+- 单引号：`'text'`
+- 缩进：2 个空格，不使用 tab
+- 尾随逗号：ES5 兼容
+- `quoteProps`: `consistent`
+
+### 4.2 命名
+
+- 组件：`PascalCase`，如 `FeedAdView`、`DrawFeedAd`
+- 函数和变量：`camelCase`，如 `dyLoadSplashAd`、`loadFeedAd`
+- 类型和接口：`PascalCase`，如 `FeedAdProps`
+- 枚举：沿用现有公开 API 风格，如 `AD_EVENT_TYPE`
+- 文件名：组件使用 `PascalCase`，工具和 API 文件沿用现有目录风格
+
+### 4.3 导入和导出
 
 ```typescript
-// Relative imports with explicit paths
 import { init } from './dy/api/AdManager';
-
-// Type-only imports (verbatimeModuleSyntax requires this)
 import type { ViewStyle } from 'react-native';
 
-// Destructured native module imports
 const { AdManager } = NativeModules;
 
-// Named exports preferred for utilities
 export { init, loadFeedAd, requestPermission };
-
-// Default exports for main module components
 export default FeedAdView;
 ```
 
-### Type Definitions
+## 5. TypeScript 约束
+
+当前项目启用严格类型检查，常见影响：
+
+- `strict`: 所有严格规则生效。
+- `verbatimModuleSyntax`: 类型必须通过 `import type` 导入。
+- `noUncheckedIndexedAccess`: 索引访问结果可能是 `undefined`。
+- `noUnusedLocals` / `noUnusedParameters`: 不保留未使用的变量或参数。
+- 模块与目标为 `esnext`，JSX 为 `react`。
+
+公共 props 用 `interface`，内部结构可用 `type`。扩展现有公开类型时，优先保持向后兼容。
 
 ```typescript
-// Interfaces for exported props (public API)
 export interface FeedAdProps {
   codeid: string;
   style?: ViewStyle;
@@ -82,219 +121,140 @@ export interface FeedAdProps {
   onAdClick?: Function;
 }
 
-// Types for internal use
-type FeedInfo = {
-  appid: string;
-  codeid: string;
-  adWidth?: string;
-};
-
-// Enums for constants
-export enum AD_EVENT_TYPE {
-  onAdError = 'onAdError',
-  onAdLoaded = 'onAdLoaded',
-  onAdClick = 'onAdClick',
-  onAdClose = 'onAdClose',
-}
-
-// Type aliases with utility types
-type ViewProps = Omit<DrawFeedAdProps, 'appid'>;
 type ListenerCache = {
   [K in AD_EVENT_TYPE]: EventSubscription | undefined;
 };
 ```
 
-### Naming Conventions
+## 6. React Native 组件模式
 
-- **Components**: PascalCase (`FeedAdView`, `DrawFeedAd`)
-- **Functions/Variables**: camelCase (`dyLoadSplashAd`, `loadFeedAd`)
-- **Constants**: camelCase (`listenerCache`) or UPPER_SNAKE_CASE (rare)
-- **Types/Interfaces**: PascalCase (`FeedAdProps`, `AD_EVENT_TYPE`)
-- **File names**: PascalCase for components, camelCase for utilities
-
-### Error Handling
+- 使用函数组件。
+- 可选 props 在解构时给默认值，例如 `adWidth = 375`、`visible = true`。
+- `visible`、关闭态等条件应早返回 `null`。
+- 静态样式使用 `StyleSheet.create`，宽高等动态值可内联组合。
+- 回调传出原生事件时，保持 `e.nativeEvent` 语义。
 
 ```typescript
-// LINKING_ERROR pattern for unlinked native modules
-const LINKING_ERROR =
-  `The package 'react-native-view' doesn't seem to be linked. Make sure: \n\n` +
-  Platform.select({ ios: "- You have run 'pod install'\n", default: '' }) +
-  '- You rebuilt the app after installing the package\n' +
-  '- You are not using Expo Go\n';
+const FeedAdView = (props: FeedAdProps) => {
+  const { codeid, style, adWidth = 375, visible = true, onAdError } = props;
+  const [closed, setClosed] = useState(false);
 
-// Check for linked module before usage
+  if (!visible || closed) return null;
+
+  return (
+    <FeedAdComponent
+      codeid={codeid}
+      style={{ width: adWidth, ...style }}
+      onAdError={(e) => {
+        onAdError && onAdError(e.nativeEvent);
+      }}
+    />
+  );
+};
+```
+
+## 7. 原生模块和事件模式
+
+### 7.1 未链接检查
+
+原生组件必须保留 `LINKING_ERROR` 兜底，避免未链接时静默失败。
+
+```typescript
 const Component =
   UIManager.getViewManagerConfig(ComponentName) != null
     ? requireNativeComponent<FeedAdProps>(ComponentName)
     : () => {
         throw new Error(LINKING_ERROR);
       };
-
-// Console logging for event debugging
-console.log('SplashAd event type ', type);
-console.log('SplashAd event ', event);
-
-// Conditional function calls
-onAdError && onAdError(e.nativeEvent);
 ```
 
-### React Component Patterns
+### 7.2 事件订阅
+
+原生事件名称使用模块名前缀，例如 `'SplashAd-onAdError'`。新增事件时同步维护枚举、listener cache 和订阅逻辑。
 
 ```typescript
-// Functional components only
-const FeedAdView = (props: FeedAdProps) => {
-  const { codeid, style, adWidth = 375, visible = true, ... } = props;
-
-  // Hooks usage
-  const [closed, setClosed] = useState(false);
-  const [height, setHeight] = useState(0);
-
-  // Early returns
-  if (!visible || closed) return null;
-
-  return (
-    <FeedAdComponent
-      codeid={codeid}
-      style={{ width: adWidth, height, ...style }}
-      onAdError={(e: any) => { onAdError && onAdError(e.nativeEvent); }}
-    />
-  );
-};
-
-// StyleSheet.create for component styles
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    width: '100%',
-  },
-});
-```
-
-### Native Module Integration Patterns
-
-```typescript
-// Access native modules
-const { AdManager } = NativeModules;
-const { SplashAd } = NativeModules;
-
-// Event emitter pattern for native events
 const eventEmitter = new NativeEventEmitter(SplashAd);
-let result = SplashAd.loadSplashAd({ codeid, anim });
 
 return {
-  result, // Promise for operation completion
-  subscribe: (type: AD_EVENT_TYPE, callback: (event: any) => void) => {
+  result,
+  subscribe: (type: AD_EVENT_TYPE, callback: (event: unknown) => void) => {
     if (listenerCache[type]) {
       listenerCache[type]?.remove();
     }
+
     return (listenerCache[type] = eventEmitter.addListener(
       'SplashAd-' + type,
-      (event: any) => {
-        callback(event);
-      }
+      callback
     ));
   },
 };
+```
 
-// Native view components
-const ComponentName = 'FeedAdViewManager';
-const FeedAdComponent = requireNativeComponent<FeedAdProps>(ComponentName);
+### 7.3 平台判断
 
-// Platform-specific logic
+平台专属能力必须显式判断，并保持调用方行为可预期。
+
+```typescript
 if (Platform.OS === 'android') {
   return AdManager.loadDrawFeedAd(info);
 }
 ```
 
-### File Organization
+## 8. 测试和验证
 
-```
-src/
-├── index.tsx                    # Main entry point, all public exports
-├── dy/
-│   ├── api/                     # API functions for ad types
-│   │   ├── AdManager.ts        # Core ad manager (init, permission)
-│   │   ├── SplashAd.ts         # Splash ads
-│   │   ├── RewardVideo.ts      # Reward video ads
-│   │   └── FullScreenVideo.ts  # Full-screen video ads
-│   └── component/              # React native components
-│       ├── FeedAd.tsx          # Feed ad view component
-│       └── DrawFeedAd.tsx      # Draw feed ad view component
-└── __tests__/                   # Test files
-    └── index.test.tsx
-```
+测试位于 `src/__tests__/`，命名使用 `*.test.ts` 或 `*.test.tsx`。Jest 配置在 `package.json`，会忽略 `example/node_modules` 和 `lib/`。
 
-## Testing
-
-- **Test location**: `src/__tests__/` directory
-- **File naming**: `*.test.tsx` or `*.test.ts`
-- **Jest config**: preset: `react-native`, modulePathIgnorePatterns excludes example/node_modules and lib/
-- **Module path ignore patterns**: `<rootDir>/example/node_modules`, `<rootDir>/lib/`
-- Run single test: `jest path/to/test.file.tsx`
-
-## Development Workflow
-
-### Quick Verification After Code Changes
+推荐验证组合：
 
 ```bash
-# 1. Rebuild the library (required after any changes to src/)
-pnpm prepare
+# 文档或非代码变更
+pnpm typecheck
 
-# 2. Start Metro bundler (in a new terminal)
-cd example && pnpm start
-# or from root directory:
+# src/ 代码变更
+pnpm prepare
+pnpm typecheck
+
+# 公共 API、事件或平台行为变更
+pnpm prepare
+pnpm typecheck
+pnpm test
+pnpm lint
+```
+
+## 9. 示例应用调试
+
+首次或原生代码变更后，按平台准备环境：
+
+```bash
+# Android：确认设备或模拟器
+adb devices
+
+# iOS：安装 Pods
+cd example/ios && pod install
+```
+
+日常调试流程：
+
+```bash
+pnpm prepare
 pnpm example start
 
-# 3. Run the app in another terminal
-# Android:
+# 另一个终端中运行平台应用
 cd example && pnpm android
-
-# iOS:
 cd example && pnpm ios
 ```
 
-### First-Time Setup
+日志查看：
 
 ```bash
-# Android: Ensure emulator or device is connected
-adb devices
-
-# iOS: Install pods (first time or after iOS code changes)
-cd ios && pod install
-```
-
-### Common Workflow
-
-```bash
-# Modify code → Rebuild → Reload app
-pnpm prepare
-# Press R (iOS) or RR (Android) in simulator/emulator to reload
-```
-
-### Debugging
-
-```bash
-# View logs
-# Android:
 adb logcat | grep BrayantAd
-
-# iOS:
-# View logs in Xcode console
 ```
 
-### File Locations
+iOS 日志通过 Xcode 控制台查看。
 
-- **Example code**: `example/src/App.tsx`, `example/src/DrawFeedViewDemo.tsx`
-- **Library code**: `src/` directory
-- **Important**: Always run `pnpm prepare` after modifying library code
+## 10. 常见改动提示
 
-## Important Notes
-
-1. **Never suppress type errors** with `as any`, `@ts-ignore`, or `@ts-expect-error`
-2. **Always check for linked native modules** before usage with the LINKING_ERROR pattern
-3. **Native events are prefixed** with module name (e.g., 'SplashAd-onAdError')
-4. **Listener cache management** prevents duplicate listeners for same event type
-5. **Platform checks** required for platform-specific features (DrawFeedAd: Android only)
-6. **Default values** for optional props (e.g., `adWidth = 375`, `visible = true`)
-7. **Event callbacks receive native events** via `e.nativeEvent` wrapper
-8. **StyleSheet.create** for component styles, inline styles for dynamic values
+- 新增广告 API：先看 `src/dy/api/` 中同类文件，复用事件枚举、事件前缀、listener cache 和平台判断模式。
+- 新增原生视图组件：先看 `FeedAd.tsx`、`DrawFeedAd.tsx`、`BannerAd.tsx`，保留 `requireNativeComponent` 和 `LINKING_ERROR` 结构。
+- 修改公共导出：同步检查 `src/index.tsx`、类型声明生成结果和测试。
+- 修改示例：确认示例代码仍能覆盖新增或变更的公开能力。
