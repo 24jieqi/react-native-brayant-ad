@@ -5,26 +5,17 @@
 
 #import "SplashAd.h"
 #import <BUAdSDK/BUSplashAd.h>
-#import "PangleAdModule.h"
 
 @interface SplashAd () <BUSplashAdDelegate>
 
 @property (nonatomic, strong) BUSplashAd *splashAd;
 @property (nonatomic, copy) void(^completeBlock)(BOOL, NSError *);
 @property (nonatomic, assign) BOOL adLoaded; // 广告已加载成功
+@property(nonatomic, copy) void (^loadCompletion)(BOOL, NSError *_Nullable);
 
 @end
 
 @implementation SplashAd
-
-+ (instancetype)sharedInstance {
-    static SplashAd *instance = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        instance = [[SplashAd alloc] init];
-    });
-    return instance;
-}
 
 - (instancetype)init {
     self = [super init];
@@ -35,6 +26,11 @@
 }
 
 - (void)loadAdWithSlotID:(NSString *)slotID {
+    [self loadAdWithSlotID:slotID completion:nil];
+}
+
+- (void)loadAdWithSlotID:(NSString *)slotID
+              completion:(void (^)(BOOL, NSError *_Nullable))completion {
     if (!slotID || slotID.length == 0) {
         NSLog(@"[Pangle] 开屏广告 SlotID 不能为空");
         return;
@@ -43,6 +39,7 @@
     // 重置状态
     self.adLoaded = NO;
     self.splashAd = nil;
+    self.loadCompletion = completion;
 
     CGSize adSize = [UIScreen mainScreen].bounds.size;
     self.splashAd = [[BUSplashAd alloc] initWithSlotID:slotID adSize:adSize];
@@ -115,18 +112,37 @@
     if (self.completeBlock) {
         self.completeBlock(NO, error);
     }
+    if (self.loadCompletion) {
+        self.loadCompletion(NO, error);
+        self.loadCompletion = nil;
+    }
 }
 
 - (void)splashAdRenderSuccess:(BUSplashAd *)splashAd {
     NSLog(@"[Pangle] 开屏广告渲染成功");
+    if (self.loadCompletion) {
+        self.loadCompletion(YES, nil);
+        self.loadCompletion = nil;
+    }
 }
 
 - (void)splashAdRenderFail:(BUSplashAd *)splashAd error:(NSError *)error {
     NSLog(@"[Pangle] 开屏广告渲染失败: %@", error.localizedDescription);
+    self.adLoaded = NO;
+    if (self.loadCompletion) {
+        self.loadCompletion(NO, error);
+        self.loadCompletion = nil;
+    }
+    if (self.eventHandler) {
+        self.eventHandler(@"failed", error);
+    }
 }
 
 - (void)splashAdWillShow:(BUSplashAd *)splashAd {
     NSLog(@"[Pangle] 开屏广告即将展示");
+    if (self.eventHandler) {
+        self.eventHandler(@"presented", nil);
+    }
 }
 
 - (void)splashAdDidClick:(BUSplashAd *)splashAd {
@@ -143,8 +159,9 @@
     if (self.completeBlock) {
         self.completeBlock(YES, nil);
     }
-    NSLog(@"[Pangle] >>> Calling notifyAdClosed");
-    [[PangleAdModule sharedInstance] notifyAdClosed];
+    if (self.eventHandler) {
+        self.eventHandler(@"closed", nil);
+    }
 }
 
 - (void)splashAdDidCloseOther:(BUSplashAd *)splashAd closeType:(NSInteger)closeType {
@@ -157,8 +174,9 @@
     if (self.completeBlock) {
         self.completeBlock(YES, nil);
     }
-    // 通知 PangleAdModule 广告已关闭，由其转发给 React Native
-    [[PangleAdModule sharedInstance] notifyAdClosed];
+    if (self.eventHandler) {
+        self.eventHandler(@"closed", nil);
+    }
 }
 
 - (void)splashAdCallback:(BUSplashAd *)splashAd withCallBackType:(NSInteger)callBackType {

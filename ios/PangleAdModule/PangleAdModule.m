@@ -4,6 +4,7 @@
 //
 
 #import "PangleAdModule.h"
+#import "AdResourceStore.h"
 #import "ATTPermissionService.h"
 #import "BannerAd.h"
 #import "ExpressNativeAd.h"
@@ -44,32 +45,31 @@ NSString *const PangleFeedAdClosed = @"PangleFeedAdClosed";
 NSString *const PangleFeedAdError = @"PangleFeedAdError";
 NSString *const PangleFeedAdLayout = @"PangleFeedAdLayout";
 
-void Zhiya_notifyAdReady(void);
-void Zhiya_notifyAdSkipped(void);
-void Zhiya_notifyAdClosed(void);
-
 @interface PangleAdModule ()
 
 @property(nonatomic, assign) BOOL hasListeners;
+@property(nonatomic, strong) SplashAd *splashAd;
+@property(nonatomic, strong) BannerAd *legacyBannerAd;
+@property(nonatomic, strong) ExpressNativeAd *legacyExpressNativeAd;
+- (NSDictionary *)tokenPayload:(AdResourceEntry *)entry;
+- (void)emitV2EventForRequest:(NSString *)requestId
+                       format:(NSString *)format
+                       slotId:(NSString *)slotId
+                        state:(NSString *)state
+                       source:(NSString *)source
+                    startedAt:(NSTimeInterval)startedAt
+                        error:(nullable NSError *)error;
 
 @end
 
 @implementation PangleAdModule
 
-static __weak PangleAdModule *sCurrentInstance = nil;
-static BOOL sPendingSplashAdClosedEvent = NO;
-
-+ (instancetype)sharedInstance {
-  if (sCurrentInstance) {
-    return sCurrentInstance;
-  }
-  return [[PangleAdModule alloc] init];
-}
-
 - (instancetype)init {
   self = [super init];
   if (self) {
-    sCurrentInstance = self;
+    _splashAd = [[SplashAd alloc] init];
+    _legacyBannerAd = [[BannerAd alloc] init];
+    _legacyExpressNativeAd = [[ExpressNativeAd alloc] init];
   }
   return self;
 }
@@ -83,30 +83,6 @@ static BOOL sPendingSplashAdClosedEvent = NO;
   id body = notification.object;
   if (self.hasListeners) {
     [self sendEventWithName:eventName body:body];
-    return;
-  }
-
-  if ([eventName isEqualToString:@"PangleSplashAdClosed"]) {
-    sPendingSplashAdClosedEvent = YES;
-  }
-}
-
-- (void)notifyAdClosed {
-  dispatch_async(dispatch_get_main_queue(), ^{
-    Zhiya_notifyAdClosed();
-
-    if (self.bridge != nil && self.hasListeners) {
-      [self sendEventWithName:@"PangleSplashAdClosed" body:nil];
-    } else {
-      sPendingSplashAdClosedEvent = YES;
-    }
-  });
-}
-
-RCT_EXPORT_METHOD(flushPendingAdClosedEvent) {
-  if (sPendingSplashAdClosedEvent && self.bridge != nil && self.hasListeners) {
-    sPendingSplashAdClosedEvent = NO;
-    [self sendEventWithName:@"PangleSplashAdClosed" body:nil];
   }
 }
 
@@ -145,6 +121,7 @@ RCT_EXPORT_METHOD(removeListeners : (double)count) {
     PangleFeedAdClosed,
     PangleFeedAdError,
     PangleFeedAdLayout,
+    @"BrayantAd-onEvent",
   ];
 }
 
@@ -158,11 +135,6 @@ RCT_EXPORT_METHOD(removeListeners : (double)count) {
            selector:@selector(handleNotification:)
                name:event
              object:nil];
-  }
-
-  if (sPendingSplashAdClosedEvent) {
-    sPendingSplashAdClosedEvent = NO;
-    [self sendEventWithName:@"PangleSplashAdClosed" body:nil];
   }
 }
 
@@ -199,13 +171,221 @@ RCT_EXPORT_METHOD(isSDKInitialized : (RCTPromiseResolveBlock)
   resolve(@(initialized));
 }
 
+RCT_EXPORT_METHOD(initializeAdSdk : (NSDictionary *)config resolver : (
+    RCTPromiseResolveBlock)resolve rejecter : (RCTPromiseRejectBlock)reject) {
+  if (config[@"allowInitialization"] &&
+      ![config[@"allowInitialization"] boolValue]) {
+    resolve(@NO);
+    return;
+  }
+  NSString *appId = config[@"appId"];
+  if (!appId || appId.length == 0) {
+    reject(@"INVALID_APP_ID", @"appId 不能为空", nil);
+    return;
+  }
+  [[PAGSDKService sharedService]
+      initializeSDKWithAppID:appId
+                  completion:^(BOOL success, NSError *_Nullable error) {
+                    if (success) {
+                      resolve(@YES);
+                    } else {
+                      reject(@"INIT_ERROR", error.localizedDescription, error);
+                    }
+                  }];
+}
+
+RCT_EXPORT_METHOD(preloadAd : (NSDictionary *)request resolver : (
+    RCTPromiseResolveBlock)resolve rejecter : (RCTPromiseRejectBlock)reject) {
+  NSString *requestId = request[@"requestId"];
+  NSString *format = request[@"format"];
+  NSArray<NSString *> *slotIds = request[@"slotIds"];
+  NSString *slotId = slotIds.firstObject;
+  NSDictionary *size = request[@"size"];
+  double width = [size[@"width"] doubleValue];
+  double height = [size[@"height"] doubleValue];
+
+  if (!requestId || !format || !slotId) {
+    reject(@"INVALID_REQUEST", @"广告请求缺少必要字段", nil);
+    return;
+  }
+
+  if ([format isEqualToString:@"feed"]) {
+    ExpressNativeAd *ad = [[ExpressNativeAd alloc] init];
+    [ad loadAdWithSlotID:slotId
+                   width:width
+                  height:height
+              completion:^(BOOL success, NSError *_Nullable error) {
+                if (!success) {
+                  reject(@"PRELOAD_FAILED", error.localizedDescription, error);
+                  return;
+                }
+                AdResourceEntry *entry =
+                    [[AdResourceStore sharedStore] storeResource:ad
+                                                      requestId:requestId
+                                                         format:format
+                                                         slotId:slotId
+                                                          width:width
+                                                         height:height];
+                resolve([self tokenPayload:entry]);
+              }];
+    return;
+  }
+
+  if ([format isEqualToString:@"banner"]) {
+    BannerAd *ad = [[BannerAd alloc] init];
+    double effectiveHeight = height > 0 ? height : 50;
+    [ad loadAdWithSlotID:slotId
+                sizeType:BannerAdSizeTypeFixed
+                   width:width
+                  height:effectiveHeight
+              completion:^(BOOL success, NSError *_Nullable error) {
+                if (!success) {
+                  reject(@"PRELOAD_FAILED", error.localizedDescription, error);
+                  return;
+                }
+                AdResourceEntry *entry =
+                    [[AdResourceStore sharedStore] storeResource:ad
+                                                      requestId:requestId
+                                                         format:format
+                                                         slotId:slotId
+                                                          width:width
+                                                         height:effectiveHeight];
+                resolve([self tokenPayload:entry]);
+              }];
+    return;
+  }
+
+  if ([format isEqualToString:@"splash"]) {
+    SplashAd *ad = [[SplashAd alloc] init];
+    [ad loadAdWithSlotID:slotId
+              completion:^(BOOL success, NSError *_Nullable error) {
+                if (!success) {
+                  reject(@"PRELOAD_FAILED", error.localizedDescription, error);
+                  return;
+                }
+                AdResourceEntry *entry =
+                    [[AdResourceStore sharedStore] storeResource:ad
+                                                      requestId:requestId
+                                                         format:format
+                                                         slotId:slotId
+                                                          width:width
+                                                         height:height];
+                resolve([self tokenPayload:entry]);
+              }];
+    return;
+  }
+
+  reject(@"UNSUPPORTED_FORMAT", format, nil);
+}
+
+RCT_EXPORT_METHOD(showSplashAdV2 : (NSDictionary *)params resolver : (
+    RCTPromiseResolveBlock)resolve rejecter : (RCTPromiseRejectBlock)reject) {
+  NSDictionary *request = params[@"request"];
+  NSString *requestId = request[@"requestId"];
+  NSArray<NSString *> *slotIds = request[@"slotIds"];
+  NSString *slotId = slotIds.firstObject;
+  NSDictionary *size = request[@"size"];
+  double width = [size[@"width"] doubleValue];
+  double height = [size[@"height"] doubleValue];
+  NSDictionary *tokenPayload = params[@"preloadToken"];
+  NSString *token = tokenPayload[@"token"];
+  NSTimeInterval timeoutMs = [params[@"timeoutMs"] doubleValue];
+  NSTimeInterval startedAt = [NSDate date].timeIntervalSince1970;
+  UIViewController *rootVC = [self rootViewController];
+
+  if (!requestId || !slotId || !rootVC) {
+    reject(@"INVALID_REQUEST", @"开屏广告请求或根控制器无效", nil);
+    return;
+  }
+
+  __block BOOL settled = NO;
+  __block SplashAd *activeAd = nil;
+  void (^finish)(NSString *, NSError *) = ^(NSString *status, NSError *error) {
+    if (settled) {
+      return;
+    }
+    settled = YES;
+    NSTimeInterval elapsed =
+        ([NSDate date].timeIntervalSince1970 - startedAt) * 1000;
+    NSMutableDictionary *result = [@{
+      @"requestId" : requestId,
+      @"slotId" : slotId,
+      @"status" : status,
+      @"elapsedMs" : @(elapsed),
+    } mutableCopy];
+    if (error) {
+      result[@"error"] = @{
+        @"code" : @"SPLASH_ERROR",
+        @"message" : error.localizedDescription ?: @"开屏广告失败",
+        @"nativeCode" : @(error.code),
+      };
+    }
+    resolve(result);
+  };
+
+  void (^showLoaded)(SplashAd *, NSString *) =
+      ^(SplashAd *ad, NSString *source) {
+        activeAd = ad;
+        ad.eventHandler = ^(NSString *state, NSError *error) {
+          [self emitV2EventForRequest:requestId
+                              format:@"splash"
+                              slotId:slotId
+                               state:state
+                              source:source
+                           startedAt:startedAt
+                               error:error];
+        };
+        [ad showAdInRootViewController:rootVC
+                           onComplete:^(BOOL completed, NSError *error) {
+                             finish(completed ? @"closed" : @"failed", error);
+                           }];
+      };
+
+  AdResourceEntry *entry =
+      [[AdResourceStore sharedStore] consumeToken:token
+                                          format:@"splash"
+                                          slotId:slotId
+                                           width:width
+                                          height:height];
+  if (entry && [entry.resource isKindOfClass:[SplashAd class]]) {
+    showLoaded((SplashAd *)entry.resource, @"preloaded");
+  } else {
+    SplashAd *ad = [[SplashAd alloc] init];
+    activeAd = ad;
+    [ad loadAdWithSlotID:slotId
+              completion:^(BOOL success, NSError *_Nullable error) {
+                if (!success) {
+                  finish(@"failed", error);
+                  return;
+                }
+                showLoaded(ad, @"realtime");
+              }];
+  }
+
+  dispatch_after(
+      dispatch_time(DISPATCH_TIME_NOW,
+                    (int64_t)(MAX(timeoutMs, 1000) / 1000.0 * NSEC_PER_SEC)),
+      dispatch_get_main_queue(), ^{
+        if (!settled) {
+          [activeAd removeAd];
+          finish(@"skipped", nil);
+        }
+      });
+}
+
 RCT_EXPORT_METHOD(loadSplashAd : (NSString *)slotID) {
-  [[SplashAd sharedInstance] loadAdWithSlotID:slotID];
+  __weak typeof(self) weakSelf = self;
+  self.splashAd.eventHandler = ^(NSString *state, NSError *error) {
+    if ([state isEqualToString:@"closed"] && weakSelf.hasListeners) {
+      [weakSelf sendEventWithName:@"PangleSplashAdClosed" body:nil];
+    }
+  };
+  [self.splashAd loadAdWithSlotID:slotID];
 }
 
 RCT_EXPORT_METHOD(isSplashAdReady : (RCTPromiseResolveBlock)
                       resolve rejecter : (RCTPromiseRejectBlock)reject) {
-  BOOL ready = [[SplashAd sharedInstance] isAdReady];
+  BOOL ready = [self.splashAd isAdReady];
   resolve(@(ready));
 }
 
@@ -217,7 +397,7 @@ RCT_EXPORT_METHOD(showSplashAd : (RCTPromiseResolveBlock)
     return;
   }
 
-  [[SplashAd sharedInstance]
+  [self.splashAd
       showAdInRootViewController:rootVC
                       onComplete:^(BOOL completed, NSError *_Nullable error) {
                         if (completed) {
@@ -251,12 +431,6 @@ RCT_EXPORT_METHOD(requestATT : (RCTPromiseResolveBlock)
         resolve(@{@"granted" : @(granted)});
       }];
 }
-
-RCT_EXPORT_METHOD(notifyAdReady) {
-  Zhiya_notifyAdReady();
-}
-
-RCT_EXPORT_METHOD(notifyAdSkipped) { Zhiya_notifyAdSkipped(); }
 
 #pragma mark - Interstitial Ad
 
@@ -300,25 +474,26 @@ RCT_EXPORT_METHOD(removeInterstitialAd) {
 
 RCT_EXPORT_METHOD(loadBannerAd : (NSString *)slotID sizeType : (NSInteger)
                       sizeType) {
-  [[BannerAd sharedInstance] loadAdWithSlotID:slotID
-                                     sizeType:(BannerAdSizeType)sizeType];
+  [self.legacyBannerAd loadAdWithSlotID:slotID
+                               sizeType:(BannerAdSizeType)sizeType];
 }
 
 RCT_EXPORT_METHOD(loadBannerAdWithSize : (NSString *)slotID sizeType : (
     NSInteger)sizeType width : (double)width height : (double)height) {
-  [[BannerAd sharedInstance] loadAdWithSlotID:slotID
-                                     sizeType:(BannerAdSizeType)sizeType
-                                        width:width
-                                       height:height];
+  [self.legacyBannerAd loadAdWithSlotID:slotID
+                               sizeType:(BannerAdSizeType)sizeType
+                                  width:width
+                                 height:height];
 }
 
 RCT_EXPORT_METHOD(isBannerAdReadyWithSize : (NSString *)slotID sizeType : (
     NSInteger)sizeType width : (double)width height : (double)height resolver : (
     RCTPromiseResolveBlock)resolve rejecter : (RCTPromiseRejectBlock)reject) {
-  BOOL ready = [[BannerAd sharedInstance] isReadyForSlotID:slotID
-                                                  sizeType:(BannerAdSizeType)sizeType
-                                                     width:width
-                                                    height:height];
+  BOOL ready = [self.legacyBannerAd
+      isReadyForSlotID:slotID
+              sizeType:(BannerAdSizeType)sizeType
+                 width:width
+                height:height];
   resolve(@(ready));
 }
 
@@ -333,39 +508,39 @@ RCT_EXPORT_METHOD(showBannerAd : (nonnull NSNumber *)reactTag resolver : (
       return;
     }
 
-    [[BannerAd sharedInstance] showInView:containerView];
+    [self.legacyBannerAd showInView:containerView];
     resolve(@{@"success" : @YES});
   });
 }
 
 RCT_EXPORT_METHOD(hideBannerAd : (RCTPromiseResolveBlock)
                       resolve rejecter : (RCTPromiseRejectBlock)reject) {
-  [[BannerAd sharedInstance] hide];
+  [self.legacyBannerAd hide];
   resolve(@{@"success" : @YES});
 }
 
-RCT_EXPORT_METHOD(removeBannerAd) { [[BannerAd sharedInstance] removeAd]; }
+RCT_EXPORT_METHOD(removeBannerAd) { [self.legacyBannerAd removeAd]; }
 
 RCT_EXPORT_METHOD(setBannerRefreshInterval : (double)interval) {
-  [BannerAd sharedInstance].refreshInterval = interval;
+  self.legacyBannerAd.refreshInterval = interval;
 }
 
 #pragma mark - Express Native Ad
 
 RCT_EXPORT_METHOD(loadExpressNativeAd : (NSString *)slotID) {
-  [[ExpressNativeAd sharedInstance] loadAdWithSlotID:slotID width:0 height:0];
+  [self.legacyExpressNativeAd loadAdWithSlotID:slotID width:0 height:0];
 }
 
 RCT_EXPORT_METHOD(loadExpressNativeAdWithAdSize : (NSString *)
                       slotID width : (CGFloat)width height : (CGFloat)height) {
-  [[ExpressNativeAd sharedInstance] loadAdWithSlotID:slotID
-                                               width:width
-                                              height:height];
+  [self.legacyExpressNativeAd loadAdWithSlotID:slotID
+                                         width:width
+                                        height:height];
 }
 
 RCT_EXPORT_METHOD(isExpressNativeAdReady : (RCTPromiseResolveBlock)
                       resolve rejecter : (RCTPromiseRejectBlock)reject) {
-  BOOL ready = [[ExpressNativeAd sharedInstance] isAdReady];
+  BOOL ready = [self.legacyExpressNativeAd isAdReady];
   resolve(@(ready));
 }
 
@@ -373,7 +548,7 @@ RCT_EXPORT_METHOD(registerExpressNativeAdContainer : (NSString *)containerRef) {
   dispatch_async(dispatch_get_main_queue(), ^{
     UIView *containerView = [self viewForTag:[containerRef integerValue]];
     if (containerView) {
-      [[ExpressNativeAd sharedInstance] registerContainerView:containerView];
+      [self.legacyExpressNativeAd registerContainerView:containerView];
     }
   });
 }
@@ -392,6 +567,46 @@ RCT_EXPORT_METHOD(unregisterExpressNativeAdView) {
     return nil;
   }
   return [uiManager viewForReactTag:@(tag)];
+}
+
+- (NSDictionary *)tokenPayload:(AdResourceEntry *)entry {
+  return @{
+    @"token" : entry.token,
+    @"requestId" : entry.requestId,
+    @"format" : entry.format,
+    @"slotId" : entry.slotId,
+    @"expiresAt" : @(entry.expiresAt * 1000),
+  };
+}
+
+- (void)emitV2EventForRequest:(NSString *)requestId
+                       format:(NSString *)format
+                       slotId:(NSString *)slotId
+                        state:(NSString *)state
+                       source:(NSString *)source
+                    startedAt:(NSTimeInterval)startedAt
+                        error:(NSError *)error {
+  if (!self.hasListeners) {
+    return;
+  }
+  NSTimeInterval elapsed =
+      ([NSDate date].timeIntervalSince1970 - startedAt) * 1000;
+  NSMutableDictionary *payload = [@{
+    @"requestId" : requestId,
+    @"format" : format,
+    @"slotId" : slotId,
+    @"state" : state,
+    @"source" : source,
+    @"elapsedMs" : @(elapsed),
+  } mutableCopy];
+  if (error) {
+    payload[@"error"] = @{
+      @"code" : @"AD_ERROR",
+      @"message" : error.localizedDescription ?: @"广告失败",
+      @"nativeCode" : @(error.code),
+    };
+  }
+  [self sendEventWithName:@"BrayantAd-onEvent" body:payload];
 }
 
 - (UIViewController *)rootViewController {

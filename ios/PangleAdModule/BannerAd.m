@@ -23,19 +23,11 @@
 @property(nonatomic, assign) double fixedWidth;
 @property(nonatomic, assign) double fixedHeight;
 @property(nonatomic, weak) UIView *currentParentView;
+@property(nonatomic, copy) void (^loadCompletion)(BOOL, NSError *_Nullable);
 
 @end
 
 @implementation BannerAd
-
-+ (instancetype)sharedInstance {
-  static BannerAd *instance = nil;
-  static dispatch_once_t onceToken;
-  dispatch_once(&onceToken, ^{
-    instance = [[BannerAd alloc] init];
-  });
-  return instance;
-}
 
 - (instancetype)init {
   self = [super init];
@@ -60,6 +52,18 @@
                  sizeType:(BannerAdSizeType)sizeType
                     width:(double)width
                     height:(double)height {
+  [self loadAdWithSlotID:slotID
+                sizeType:sizeType
+                   width:width
+                  height:height
+              completion:nil];
+}
+
+- (void)loadAdWithSlotID:(NSString *)slotID
+                sizeType:(BannerAdSizeType)sizeType
+                   width:(double)width
+                  height:(double)height
+              completion:(void (^)(BOOL, NSError *_Nullable))completion {
   dispatch_async(dispatch_get_main_queue(), ^{
     if (!slotID || slotID.length == 0) {
       NSLog(@"[Pangle] Banner广告 SlotID 不能为空");
@@ -95,6 +99,7 @@
     self.currentSizeType = sizeType;
     self.fixedWidth = width;
     self.fixedHeight = height;
+    self.loadCompletion = completion;
 
     CGSize cgSize = [self sizeForType:sizeType width:width height:height];
 
@@ -121,6 +126,10 @@
           postNotificationName:@"PangleBannerAdLoadFail"
                         object:@{@"error" : error.localizedDescription}];
       self.adLoaded = NO;
+      if (self.loadCompletion) {
+        self.loadCompletion(NO, error);
+        self.loadCompletion = nil;
+      }
       return;
     }
     NSLog(@"[Pangle] 根视图控制器: %@", rootVC);
@@ -298,6 +307,7 @@
     self.currentParentView = nil;
     self.adLoaded = NO;
     self.adRendered = NO;
+    self.loadCompletion = nil;
     NSLog(@"[Pangle] Banner广告已移除");
   });
 }
@@ -359,12 +369,20 @@
         [self.delegate bannerAdDidLoadFail:bannerAdView error:error];
     }
     [[NSNotificationCenter defaultCenter] postNotificationName:@"PangleBannerAdLoadFail" object:@{@"error": error.localizedDescription}];
+    if (self.loadCompletion) {
+      self.loadCompletion(NO, error);
+      self.loadCompletion = nil;
+    }
 }
 
 - (void)nativeExpressBannerAdViewRenderSuccess:
     (BUNativeExpressBannerView *)bannerAdView {
   NSLog(@"[Pangle] Banner广告渲染成功");
   self.adRendered = YES;
+  if (self.loadCompletion) {
+    self.loadCompletion(YES, nil);
+    self.loadCompletion = nil;
+  }
   // 发送渲染成功事件给 React Native
   [[NSNotificationCenter defaultCenter]
       postNotificationName:@"PangleBannerAdRenderSuccess"

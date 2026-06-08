@@ -21,8 +21,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface ExpressNativeAd : NSObject
 
-+ (instancetype)sharedInstance;
-
 @property(nonatomic, weak, nullable) id<ExpressNativeAdDelegate> delegate;
 @property(nonatomic, strong, readonly, nullable)
     BUNativeExpressAdView *expressAdView;
@@ -30,8 +28,14 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)loadAdWithSlotID:(NSString *)slotID
                    width:(CGFloat)width
                   height:(CGFloat)height;
+- (void)loadAdWithSlotID:(NSString *)slotID
+                   width:(CGFloat)width
+                  height:(CGFloat)height
+              completion:(void (^)(BOOL success,
+                                    NSError *_Nullable error))completion;
 - (BOOL)isAdReady;
 - (void)registerContainerView:(UIView *)containerView;
+- (void)removeAd;
 
 @end
 

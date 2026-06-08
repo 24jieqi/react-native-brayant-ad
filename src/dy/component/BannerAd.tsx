@@ -203,13 +203,7 @@ const BannerAdView = (props: BannerAdProps) => {
     if (iosLoadedRef.current) {
       setTimeout(showIOSBanner, 0);
     }
-  }, [
-    dismissed,
-    visible,
-    adWidth,
-    adHeight,
-    showIOSBanner,
-  ]);
+  }, [dismissed, visible, adWidth, adHeight, showIOSBanner]);
 
   // Early returns after all hooks
   if (!visible || dismissed) {

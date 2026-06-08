@@ -8,8 +8,8 @@ import android.view.ViewGroup;
 import android.widget.RelativeLayout;
 
 import com.brayantad.R;
+import com.brayantad.core.AdResourcePool;
 import com.brayantad.dy.DyADCore;
-import com.brayantad.dy.banner.BannerAdModule;
 import com.brayantad.utils.Utils;
 import com.bytedance.sdk.openadsdk.AdSlot;
 import com.bytedance.sdk.openadsdk.TTAdDislike;
@@ -24,6 +24,10 @@ public class BannerAdView extends RelativeLayout {
   private Activity mActivity;
   private ReactContext mReactContext;
   private String mCodeId;
+  private String mRequestId = "";
+  private String mPreloadToken;
+  private String mSource = "realtime";
+  private long mRequestStartTime = 0;
   private AdSlot mAdSlot;
   private TTNativeExpressAd mBannerAd;
 
@@ -70,6 +74,14 @@ public class BannerAdView extends RelativeLayout {
   public void setCodeId(String codeId) {
     mCodeId = codeId;
     showAd();
+  }
+
+  public void setRequestId(String requestId) {
+    mRequestId = requestId == null ? "" : requestId;
+  }
+
+  public void setPreloadToken(String preloadToken) {
+    mPreloadToken = preloadToken;
   }
 
   /**
@@ -124,6 +136,8 @@ public class BannerAdView extends RelativeLayout {
 
     // 在UI线程加载广告
     mIsAdLoading = true;
+    mRequestStartTime = System.currentTimeMillis();
+    emitV2Event("loading", null, 0, 0);
     runOnUiThread(this::loadBannerAd);
   }
 
@@ -134,8 +148,20 @@ public class BannerAdView extends RelativeLayout {
     }
 
     // 先检查是否有预加载的缓存广告
-    TTNativeExpressAd cachedAd = BannerAdModule.getCachedBannerAd(mCodeId);
+    AdResourcePool.Entry pooledEntry = AdResourcePool.consume(
+      mPreloadToken,
+      "banner",
+      mCodeId,
+      mExpectedWidth,
+      mExpectedHeight
+    );
+    TTNativeExpressAd cachedAd =
+      pooledEntry != null && pooledEntry.resource instanceof TTNativeExpressAd
+        ? (TTNativeExpressAd) pooledEntry.resource
+        : null;
     if (cachedAd != null) {
+      mSource = "preloaded";
+      emitV2Event("loaded", null, 0, 0);
       mBannerAd = cachedAd;
       mIsAdLoading = false;
       bindAdListener(mBannerAd);
@@ -180,6 +206,8 @@ public class BannerAdView extends RelativeLayout {
 
           mIsAdLoading = false;
           mBannerAd = ads.get(0);
+          mSource = "realtime";
+          emitV2Event("loaded", null, 0, 0);
           showBannerAd(mBannerAd);
         }
       }
@@ -197,6 +225,7 @@ public class BannerAdView extends RelativeLayout {
     mActivity = activity;
     activity.runOnUiThread(() -> {
       bindAdListener(ad);
+      emitV2Event("rendering", null, 0, 0);
       ad.render();
     });
   }
@@ -232,6 +261,7 @@ public class BannerAdView extends RelativeLayout {
           mHasRenderedAd = true;
           attachRenderedAdView(view, (int) width, (int) height);
           onAdRenderSuccess((int) width, (int) height);
+          emitV2Event("presented", null, (int) width, (int) height);
         }
       }
     );
@@ -274,12 +304,14 @@ public class BannerAdView extends RelativeLayout {
   }
 
   public void onAdError(String message) {
+    emitV2Event("terminal", message, 0, 0);
     WritableMap event = Arguments.createMap();
     event.putString("message", message);
     sendEvent("onAdError", event);
   }
 
   public void onAdClick() {
+    emitV2Event("presented", "click", null, 0, 0);
     WritableMap event = Arguments.createMap();
     sendEvent("onAdClick", event);
   }
@@ -290,6 +322,7 @@ public class BannerAdView extends RelativeLayout {
   }
 
   public void onAdDismiss() {
+    emitV2Event("terminal", null, 0, 0);
     WritableMap event = Arguments.createMap();
     sendEvent("onAdDismiss", event);
   }
@@ -305,6 +338,48 @@ public class BannerAdView extends RelativeLayout {
     WritableMap event = Arguments.createMap();
     event.putString("reason", reason);
     sendEvent("onAdDislike", event);
+  }
+
+  private void emitV2Event(String state, String errorMessage, int width, int height) {
+    emitV2Event(state, null, errorMessage, width, height);
+  }
+
+  private void emitV2Event(
+    String state,
+    String action,
+    String errorMessage,
+    int width,
+    int height
+  ) {
+    if (mRequestId.isEmpty()) {
+      return;
+    }
+    WritableMap event = Arguments.createMap();
+    event.putString("requestId", mRequestId);
+    event.putString("format", "banner");
+    event.putString("slotId", mCodeId == null ? "" : mCodeId);
+    event.putString("state", state);
+    if (action != null) {
+      event.putString("action", action);
+    }
+    event.putString("source", mSource);
+    event.putDouble(
+      "elapsedMs",
+      mRequestStartTime > 0 ? System.currentTimeMillis() - mRequestStartTime : 0
+    );
+    if (width > 0) {
+      event.putInt("width", width);
+    }
+    if (height > 0) {
+      event.putInt("height", height);
+    }
+    if (errorMessage != null) {
+      WritableMap error = Arguments.createMap();
+      error.putString("code", "BANNER_ERROR");
+      error.putString("message", errorMessage);
+      event.putMap("error", error);
+    }
+    sendEvent("onAdEvent", event);
   }
 
   public void destroy() {

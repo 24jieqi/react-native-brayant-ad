@@ -51,6 +51,16 @@ public class FeedAdViewManager extends ViewGroupManager<FeedAdView> {
     view.setCodeId(codeid);
   }
 
+  @ReactProp(name = "requestId")
+  public void setRequestId(FeedAdView view, @Nullable String requestId) {
+    view.setRequestId(requestId);
+  }
+
+  @ReactProp(name = "preloadToken")
+  public void setPreloadToken(FeedAdView view, @Nullable String preloadToken) {
+    view.setPreloadToken(preloadToken);
+  }
+
   @ReactProp(name = "adWidth")
   public void setAdWidth(FeedAdView view, int adWidth) {
     view.setWidth(adWidth);
@@ -69,6 +79,7 @@ public class FeedAdViewManager extends ViewGroupManager<FeedAdView> {
       .put("onAdError", MapBuilder.of("phasedRegistrationNames", MapBuilder.of("bubbled", "onAdError")))
       .put("onAdClose", MapBuilder.of("phasedRegistrationNames", MapBuilder.of("bubbled", "onAdClose")))
       .put("onAdLayout", MapBuilder.of("phasedRegistrationNames", MapBuilder.of("bubbled", "onAdLayout")))
+      .put("onAdEvent", MapBuilder.of("phasedRegistrationNames", MapBuilder.of("bubbled", "onAdEvent")))
       .build();
   }
 }

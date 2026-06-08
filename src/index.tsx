@@ -2,13 +2,13 @@ import { NativeModules, Platform } from 'react-native';
 import {
   init,
   loadFeedAd,
-  preloadFeedAd,
+  preloadFeedAd as legacyPreloadFeedAd,
   requestPermission,
 } from './dy/api/AdManager';
 import startRewardVideo from './dy/api/RewardVideo';
 import {
   dyLoadSplashAd,
-  preloadSplashAd,
+  preloadSplashAd as legacyPreloadSplashAd,
   hasPreloadedSplashAd,
   clearPreloadedSplashAd,
 } from './dy/api/SplashAd';
@@ -18,6 +18,30 @@ import BannerAdView from './dy/component/BannerAd';
 
 import startFullScreenVideo from './dy/api/FullScreenVideo';
 import startInterstitialAd from './dy/api/InterstitialAd';
+import { BannerAd } from './component/BannerAd';
+import { FeedAd } from './component/FeedAd';
+import { createAdRequest } from './core/request';
+import {
+  preloadBannerAd,
+  preloadFeedAd,
+  preloadSplashAdV2 as preloadSplashAd,
+} from './core/preload';
+import { initializeAdSdk } from './core/sdk';
+import { showSplashAd } from './core/splash';
+import type {
+  AdError,
+  AdEvent,
+  AdFormat,
+  AdLifecycleState,
+  AdPreloadToken,
+  AdRequest,
+  AdSdkConfig,
+  AdSdkInitResult,
+  AdSize,
+  AdTerminalStatus,
+  FullscreenAdResult,
+  InlineAdProps,
+} from './core/types';
 const LINKING_ERROR =
   `The package 'react-native-brayant-ad' doesn't seem to be linked. Make sure: \n\n` +
   Platform.select({ ios: "- You have run 'pod install'\n", default: '' }) +
@@ -41,17 +65,50 @@ export function multiply(a: number, b: number): Promise<number> {
 export {
   init,
   loadFeedAd,
-  preloadFeedAd,
   requestPermission,
   loadDrawFeedAd,
   startRewardVideo,
   startFullScreenVideo,
   startInterstitialAd,
   dyLoadSplashAd,
-  preloadSplashAd,
   hasPreloadedSplashAd,
   clearPreloadedSplashAd,
   DrawFeedView,
   FeedAdView,
   BannerAdView,
+  initializeAdSdk,
+  createAdRequest,
+  preloadFeedAd,
+  preloadBannerAd,
+  preloadSplashAd,
+  showSplashAd,
+  FeedAd,
+  BannerAd,
+};
+
+export const legacy = {
+  init,
+  loadFeedAd,
+  preloadFeedAd: legacyPreloadFeedAd,
+  preloadSplashAd: legacyPreloadSplashAd,
+  dyLoadSplashAd,
+  hasPreloadedSplashAd,
+  clearPreloadedSplashAd,
+  FeedAdView,
+  BannerAdView,
+};
+
+export type {
+  AdError,
+  AdEvent,
+  AdFormat,
+  AdLifecycleState,
+  AdPreloadToken,
+  AdRequest,
+  AdSdkConfig,
+  AdSdkInitResult,
+  AdSize,
+  AdTerminalStatus,
+  FullscreenAdResult,
+  InlineAdProps,
 };

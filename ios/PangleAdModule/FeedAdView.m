@@ -7,6 +7,7 @@
 //
 
 #import "FeedAdView.h"
+#import "AdResourceStore.h"
 #import "ExpressNativeAd.h"
 #import <React/RCTLog.h>
 
@@ -16,6 +17,10 @@
 @property (nonatomic, assign) BOOL isAdLoaded;
 @property (nonatomic, assign) BOOL isVisible;
 @property (nonatomic, assign) BOOL didSendLayoutEvent;
+@property(nonatomic, strong) ExpressNativeAd *adController;
+@property(nonatomic, copy) NSString *lastLoadKey;
+@property(nonatomic, copy) NSString *resourceSource;
+@property(nonatomic, assign) NSTimeInterval requestStartedAt;
 
 @end
 
@@ -43,6 +48,9 @@
   _isAdLoaded = NO;
   _isVisible = YES;
   _didSendLayoutEvent = NO;
+  _adController = [[ExpressNativeAd alloc] init];
+  _adController.delegate = self;
+  _resourceSource = @"realtime";
   
   // 创建广告容器视图
   _adContainerView = [[UIView alloc] init];
@@ -77,6 +85,16 @@
   self.hidden = !_isVisible;
 }
 
+- (void)setRequestId:(NSString *)requestId {
+  _requestId = [requestId copy];
+  [self loadAdIfNeeded];
+}
+
+- (void)setPreloadToken:(NSString *)preloadToken {
+  _preloadToken = [preloadToken copy];
+  [self loadAdIfNeeded];
+}
+
 #pragma mark - Ad Loading
 
 - (void)loadAdIfNeeded {
@@ -91,15 +109,39 @@
   }
   
   CGFloat width = [_adWidth doubleValue] > 0 ? [_adWidth doubleValue] : [UIScreen mainScreen].bounds.size.width;
+  NSString *loadKey =
+      [NSString stringWithFormat:@"%@:%@:%0.f", _requestId ?: @"", _codeid,
+                                 width];
+  if ([self.lastLoadKey isEqualToString:loadKey]) {
+    return;
+  }
+  self.lastLoadKey = loadKey;
+  self.requestStartedAt = [NSDate date].timeIntervalSince1970;
+  self.resourceSource = @"realtime";
+  [self emitEventWithState:@"loading" error:nil width:0 height:0];
   
   RCTLog(@"[FeedAdView] 开始加载广告, codeid: %@, width: %.0f", _codeid, width);
   _didSendLayoutEvent = NO;
-  
-  // 设置 ExpressNativeAd 的 delegate
-  [ExpressNativeAd sharedInstance].delegate = self;
-  
-  // 加载广告
-  [[ExpressNativeAd sharedInstance] loadAdWithSlotID:_codeid width:width height:0];
+
+  AdResourceEntry *entry =
+      [[AdResourceStore sharedStore] consumeToken:self.preloadToken
+                                          format:@"feed"
+                                          slotId:self.codeid
+                                           width:width
+                                          height:0];
+  if (entry && [entry.resource isKindOfClass:[ExpressNativeAd class]]) {
+    self.resourceSource = @"preloaded";
+    self.adController = (ExpressNativeAd *)entry.resource;
+    self.adController.delegate = self;
+    [self emitEventWithState:@"loaded" error:nil width:0 height:0];
+    [self attachCurrentAd];
+    return;
+  }
+
+  [self.adController removeAd];
+  self.adController = [[ExpressNativeAd alloc] init];
+  self.adController.delegate = self;
+  [self.adController loadAdWithSlotID:_codeid width:width height:0];
 }
 
 #pragma mark - ExpressNativeAdDelegate
@@ -107,15 +149,25 @@
 - (void)expressAdDidLoad {
   RCTLog(@"[FeedAdView] 广告加载成功");
   _isAdLoaded = YES;
+  [self emitEventWithState:@"loaded" error:nil width:0 height:0];
+  [self attachCurrentAd];
+}
+
+- (void)attachCurrentAd {
   
   // 注册容器视图
   UIViewController *rootVC = [self getRootViewController];
-  if (rootVC && [ExpressNativeAd sharedInstance].expressAdView) {
-    [ExpressNativeAd sharedInstance].expressAdView.rootViewController = rootVC;
-    [[ExpressNativeAd sharedInstance] registerContainerView:_adContainerView];
+  if (rootVC && self.adController.expressAdView) {
+    self.adController.expressAdView.rootViewController = rootVC;
+    [self.adController registerContainerView:_adContainerView];
     
     // 触发渲染
-    [[ExpressNativeAd sharedInstance].expressAdView render];
+    if (![self.adController isAdReady]) {
+      [self emitEventWithState:@"rendering" error:nil width:0 height:0];
+      [self.adController.expressAdView render];
+    } else {
+      [self expressAdDidShow];
+    }
   }
 }
 
@@ -124,6 +176,7 @@
   if (self.onAdError) {
     self.onAdError(@{@"error" : error.localizedDescription ?: @"广告加载失败"});
   }
+  [self emitEventWithState:@"terminal" error:error width:0 height:0];
 }
 
 - (void)expressAdDidClick {
@@ -131,6 +184,11 @@
   if (self.onAdClick) {
     self.onAdClick(@{});
   }
+  [self emitEventWithState:@"presented"
+                    action:@"click"
+                     error:nil
+                     width:0
+                    height:0];
 }
 
 - (void)expressAdDidClose {
@@ -138,6 +196,7 @@
   if (self.onAdClose) {
     self.onAdClose(@{});
   }
+  [self emitEventWithState:@"terminal" error:nil width:0 height:0];
 }
 
 - (void)expressAdDidShow {
@@ -151,7 +210,7 @@
       return;
     }
 
-    CGSize adSize = [ExpressNativeAd sharedInstance].expressAdView.bounds.size;
+    CGSize adSize = self.adController.expressAdView.bounds.size;
     CGFloat width = adSize.width > 0 ? adSize.width : self.adContainerView.bounds.size.width;
     CGFloat height = adSize.height > 0 ? adSize.height : self.adContainerView.bounds.size.height;
 
@@ -164,7 +223,66 @@
       @"width" : @(width),
       @"height" : @(height),
     });
+    [self emitEventWithState:@"presented"
+                       error:nil
+                       width:width
+                      height:height];
   });
+}
+
+- (void)emitEventWithState:(NSString *)state
+                     error:(NSError *)error
+                     width:(CGFloat)width
+                    height:(CGFloat)height {
+  [self emitEventWithState:state
+                    action:nil
+                     error:error
+                     width:width
+                    height:height];
+}
+
+- (void)emitEventWithState:(NSString *)state
+                    action:(NSString *)action
+                     error:(NSError *)error
+                     width:(CGFloat)width
+                    height:(CGFloat)height {
+  if (!self.onAdEvent || !self.requestId || self.requestId.length == 0) {
+    return;
+  }
+  NSTimeInterval elapsed =
+      self.requestStartedAt > 0
+          ? ([NSDate date].timeIntervalSince1970 - self.requestStartedAt) * 1000
+          : 0;
+  NSMutableDictionary *payload = [@{
+    @"requestId" : self.requestId,
+    @"format" : @"feed",
+    @"slotId" : self.codeid ?: @"",
+    @"state" : state,
+    @"source" : self.resourceSource ?: @"realtime",
+    @"elapsedMs" : @(elapsed),
+  } mutableCopy];
+  if (action) {
+    payload[@"action"] = action;
+  }
+  if (width > 0) {
+    payload[@"width"] = @(width);
+  }
+  if (height > 0) {
+    payload[@"height"] = @(height);
+  }
+  if (error) {
+    payload[@"error"] = @{
+      @"code" : @"FEED_ERROR",
+      @"message" : error.localizedDescription ?: @"广告加载失败",
+      @"nativeCode" : @(error.code),
+    };
+  }
+  self.onAdEvent(payload);
+}
+
+- (void)dealloc {
+  self.adController.delegate = nil;
+  [self.adController removeAd];
 }
 
 #pragma mark - Helper

@@ -14,12 +14,15 @@ NS_ASSUME_NONNULL_BEGIN
 @interface FeedAdView : UIView
 
 @property (nonatomic, copy, nullable) NSString *codeid;
+@property (nonatomic, copy, nullable) NSString *requestId;
+@property (nonatomic, copy, nullable) NSString *preloadToken;
 @property (nonatomic, strong, nullable) NSNumber *adWidth;
 @property (nonatomic, assign) BOOL visible;
 @property (nonatomic, copy, nullable) RCTBubblingEventBlock onAdError;
 @property (nonatomic, copy, nullable) RCTBubblingEventBlock onAdLayout;
 @property (nonatomic, copy, nullable) RCTBubblingEventBlock onAdClick;
 @property (nonatomic, copy, nullable) RCTBubblingEventBlock onAdClose;
+@property (nonatomic, copy, nullable) RCTBubblingEventBlock onAdEvent;
 
 @end
 

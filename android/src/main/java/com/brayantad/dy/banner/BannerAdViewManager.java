@@ -48,6 +48,16 @@ public class BannerAdViewManager extends ViewGroupManager<BannerAdView> {
     view.setCodeId(codeid);
   }
 
+  @ReactProp(name = "requestId")
+  public void setRequestId(BannerAdView view, @Nullable String requestId) {
+    view.setRequestId(requestId);
+  }
+
+  @ReactProp(name = "preloadToken")
+  public void setPreloadToken(BannerAdView view, @Nullable String preloadToken) {
+    view.setPreloadToken(preloadToken);
+  }
+
   @ReactProp(name = "adWidth")
   public void setAdWidth(BannerAdView view, int adWidth) {
     view.setWidth(adWidth);
@@ -73,6 +83,7 @@ public class BannerAdViewManager extends ViewGroupManager<BannerAdView> {
       .put("onAdRenderSuccess", MapBuilder.of("phasedRegistrationNames", MapBuilder.of("bubbled", "onAdRenderSuccess")))
       .put("onAdDismiss", MapBuilder.of("phasedRegistrationNames", MapBuilder.of("bubbled", "onAdDismiss")))
       .put("onAdDislike", MapBuilder.of("phasedRegistrationNames", MapBuilder.of("bubbled", "onAdDislike")))
+      .put("onAdEvent", MapBuilder.of("phasedRegistrationNames", MapBuilder.of("bubbled", "onAdEvent")))
       .build();
   }
 }

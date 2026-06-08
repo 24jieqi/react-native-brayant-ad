@@ -27,8 +27,6 @@ typedef NS_ENUM(NSInteger, BannerAdSizeType) {
 
 @interface BannerAd : NSObject
 
-+ (instancetype)sharedInstance;
-
 @property (nonatomic, weak, nullable) id<BannerAdDelegate> delegate;
 @property (nonatomic, assign) NSTimeInterval refreshInterval;
 @property (nonatomic, strong, readonly, nullable) BUNativeExpressBannerView *bannerAdView;
@@ -36,6 +34,12 @@ typedef NS_ENUM(NSInteger, BannerAdSizeType) {
 
 - (void)loadAdWithSlotID:(NSString *)slotID sizeType:(BannerAdSizeType)sizeType;
 - (void)loadAdWithSlotID:(NSString *)slotID sizeType:(BannerAdSizeType)sizeType width:(double)width height:(double)height;
+- (void)loadAdWithSlotID:(NSString *)slotID
+                sizeType:(BannerAdSizeType)sizeType
+                   width:(double)width
+                  height:(double)height
+              completion:(void (^)(BOOL success,
+                                    NSError *_Nullable error))completion;
 - (BOOL)isReadyForSlotID:(NSString *)slotID sizeType:(BannerAdSizeType)sizeType width:(double)width height:(double)height;
 - (void)showInView:(UIView *)parentView;
 - (void)hide;

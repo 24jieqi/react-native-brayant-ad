@@ -11,9 +11,13 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface SplashAd : NSObject
 
-+ (instancetype)sharedInstance;
+@property(nonatomic, copy, nullable)
+    void (^eventHandler)(NSString *state, NSError *_Nullable error);
 
 - (void)loadAdWithSlotID:(NSString *)slotID;
+- (void)loadAdWithSlotID:(NSString *)slotID
+              completion:(void (^)(BOOL success,
+                                    NSError *_Nullable error))completion;
 
 - (BOOL)isAdReady;
 

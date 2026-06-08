@@ -4,7 +4,7 @@ module.exports = {
       platforms: {
         android: {
           sourceDir: '../android',
-          packageImportPath: 'import BrayantAd from \'react-native-brayant-ad\';',
+          packageImportPath: "import BrayantAd from 'react-native-brayant-ad';",
           packageInstance: 'new BrayantAdPackage()',
         },
       },

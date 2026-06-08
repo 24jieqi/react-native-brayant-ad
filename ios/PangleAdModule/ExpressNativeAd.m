@@ -16,19 +16,11 @@
 @property(nonatomic, strong) UIView *containerView;
 @property(nonatomic, assign) BOOL adLoaded;
 @property(nonatomic, assign) BOOL adRendered;
+@property(nonatomic, copy) void (^loadCompletion)(BOOL, NSError *_Nullable);
 
 @end
 
 @implementation ExpressNativeAd
-
-+ (instancetype)sharedInstance {
-  static ExpressNativeAd *instance = nil;
-  static dispatch_once_t onceToken;
-  dispatch_once(&onceToken, ^{
-    instance = [[ExpressNativeAd alloc] init];
-  });
-  return instance;
-}
 
 - (instancetype)init {
   self = [super init];
@@ -42,6 +34,13 @@
 - (void)loadAdWithSlotID:(NSString *)slotID
                     width:(CGFloat)width
                    height:(CGFloat)height {
+  [self loadAdWithSlotID:slotID width:width height:height completion:nil];
+}
+
+- (void)loadAdWithSlotID:(NSString *)slotID
+                   width:(CGFloat)width
+                  height:(CGFloat)height
+              completion:(void (^)(BOOL, NSError *_Nullable))completion {
   if (!slotID || slotID.length == 0) {
     return;
   }
@@ -49,6 +48,7 @@
   self.adLoaded = NO;
   self.adRendered = NO;
   self.expressAdView = nil;
+  self.loadCompletion = completion;
 
   CGFloat screenWidth = [UIScreen mainScreen].bounds.size.width;
   CGFloat finalWidth = width > 0 ? width : screenWidth;
@@ -123,6 +123,10 @@
           respondsToSelector:@selector(expressAdDidFailWithError:)]) {
     [self.delegate expressAdDidFailWithError:error];
   }
+  if (self.loadCompletion) {
+    self.loadCompletion(NO, error);
+    self.loadCompletion = nil;
+  }
 }
 
 - (void)nativeExpressAdViewRenderSuccess:
@@ -135,6 +139,10 @@
 
   if ([self.delegate respondsToSelector:@selector(expressAdDidShow)]) {
     [self.delegate expressAdDidShow];
+  }
+  if (self.loadCompletion) {
+    self.loadCompletion(YES, nil);
+    self.loadCompletion = nil;
   }
 }
 
@@ -151,6 +159,10 @@
   if ([self.delegate
           respondsToSelector:@selector(expressAdDidFailWithError:)]) {
     [self.delegate expressAdDidFailWithError:error];
+  }
+  if (self.loadCompletion) {
+    self.loadCompletion(NO, error);
+    self.loadCompletion = nil;
   }
 }
 
@@ -179,6 +191,17 @@
   if ([self.delegate respondsToSelector:@selector(expressAdDidClose)]) {
     [self.delegate expressAdDidClose];
   }
+}
+
+- (void)removeAd {
+  [self.expressAdView removeFromSuperview];
+  self.expressAdManager.delegate = nil;
+  self.expressAdManager = nil;
+  self.expressAdView = nil;
+  self.containerView = nil;
+  self.adLoaded = NO;
+  self.adRendered = NO;
+  self.loadCompletion = nil;
 }
 
 @end

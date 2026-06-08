@@ -26,12 +26,15 @@ RCT_EXPORT_MODULE(FeedAdViewManager)
 #pragma mark - Properties
 
 RCT_EXPORT_VIEW_PROPERTY(codeid, NSString)
+RCT_EXPORT_VIEW_PROPERTY(requestId, NSString)
+RCT_EXPORT_VIEW_PROPERTY(preloadToken, NSString)
 RCT_EXPORT_VIEW_PROPERTY(adWidth, NSNumber)
 RCT_EXPORT_VIEW_PROPERTY(visible, BOOL)
 RCT_EXPORT_VIEW_PROPERTY(onAdError, RCTBubblingEventBlock)
 RCT_EXPORT_VIEW_PROPERTY(onAdLayout, RCTBubblingEventBlock)
 RCT_EXPORT_VIEW_PROPERTY(onAdClick, RCTBubblingEventBlock)
 RCT_EXPORT_VIEW_PROPERTY(onAdClose, RCTBubblingEventBlock)
+RCT_EXPORT_VIEW_PROPERTY(onAdEvent, RCTBubblingEventBlock)
 
 #pragma mark - Event Exports
 
@@ -40,7 +43,8 @@ RCT_EXPORT_VIEW_PROPERTY(onAdClose, RCTBubblingEventBlock)
     @"onAdError",
     @"onAdLayout",
     @"onAdClick",
-    @"onAdClose"
+    @"onAdClose",
+    @"onAdEvent"
   ];
 }
 

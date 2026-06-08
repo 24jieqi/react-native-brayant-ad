@@ -5,7 +5,7 @@ import {
   startRewardVideo,
   requestPermission,
   dyLoadSplashAd,
-  preloadSplashAd,
+  legacy,
   hasPreloadedSplashAd,
   startFullScreenVideo,
   BannerAdView,
@@ -36,7 +36,7 @@ export default function App() {
   const preloadSplashAdExample = async () => {
     try {
       // 在应用启动时预加载开屏广告，避免展示时出现白屏
-      const result = await preloadSplashAd({ codeid: '****' });
+      const result = await legacy.preloadSplashAd({ codeid: '****' });
       console.log('预加载开屏广告成功:', result);
       setPreloaded(true);
     } catch (error) {
@@ -138,7 +138,10 @@ export default function App() {
         }}
         onPress={onOpenScren}
       >
-        <Text style={{ textAlign: 'center' }}> 开屏广告{preloaded ? '(已预加载)' : '(未预加载)'}</Text>
+        <Text style={{ textAlign: 'center' }}>
+          {' '}
+          开屏广告{preloaded ? '(已预加载)' : '(未预加载)'}
+        </Text>
       </TouchableOpacity>
       <TouchableOpacity
         style={{

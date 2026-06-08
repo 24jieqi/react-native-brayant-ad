@@ -11,6 +11,7 @@ import android.widget.RelativeLayout;
 import androidx.annotation.NonNull;
 
 import com.brayantad.R;
+import com.brayantad.core.AdResourcePool;
 import com.brayantad.dy.DyADCore;
 import com.brayantad.utils.DislikeDialog;
 import com.brayantad.utils.Utils;
@@ -36,11 +37,14 @@ public class FeedAdView extends RelativeLayout {
   private Activity mContext;
   private ReactContext reactContext;
   private String _codeid = "";
+  private String mRequestId = "";
+  private String mPreloadToken;
+  private String mSource = "realtime";
   private AdSlot adSlot;
 
   private int _expectedWidth = 375;
   private int _expectedHeight = 0; // 高度0 自适应
-  private final long startTime = 0;
+  private long requestStartTime = 0;
   private boolean mHasShowDownloadActive = false;
   private boolean mIsAdLoading = false;
   private boolean mVisible = true;
@@ -74,6 +78,14 @@ public class FeedAdView extends RelativeLayout {
     Log.d(TAG, "setCodeId: " + codeId + ", _expectedWidth:" + _expectedWidth);
     _codeid = codeId;
     showAd();
+  }
+
+  public void setRequestId(String requestId) {
+    mRequestId = requestId == null ? "" : requestId;
+  }
+
+  public void setPreloadToken(String preloadToken) {
+    mPreloadToken = preloadToken;
   }
 
   public void setVisible(boolean visible) {
@@ -127,9 +139,23 @@ public class FeedAdView extends RelativeLayout {
     }
     mContext = activity;
     mIsAdLoading = true;
+    requestStartTime = System.currentTimeMillis();
+    emitV2Event("loading", null, 0, 0);
 
-    TTNativeExpressAd cachedAd = DyADCore.consumeFeedAd(_codeid);
+    AdResourcePool.Entry pooledEntry = AdResourcePool.consume(
+      mPreloadToken,
+      "feed",
+      _codeid,
+      _expectedWidth,
+      0
+    );
+    TTNativeExpressAd cachedAd =
+      pooledEntry != null && pooledEntry.resource instanceof TTNativeExpressAd
+        ? (TTNativeExpressAd) pooledEntry.resource
+        : null;
     if (cachedAd != null) {
+      mSource = "preloaded";
+      emitV2Event("loaded", null, 0, 0);
       if (mCurrentAd != null) {
         mCurrentAd.destroy();
       }
@@ -189,6 +215,8 @@ public class FeedAdView extends RelativeLayout {
           }
           // 保存广告引用，用于后续销毁
           _this.mCurrentAd = ad;
+          _this.mSource = "realtime";
+          _this.emitV2Event("loaded", null, 0, 0);
           _showTTAd(ad);
         }
       }
@@ -207,6 +235,7 @@ public class FeedAdView extends RelativeLayout {
     activity.runOnUiThread(
       () -> {
         bindAdListener(ad);
+        emitV2Event("rendering", null, 0, 0);
         ad.render();
       }
     );
@@ -230,7 +259,7 @@ public class FeedAdView extends RelativeLayout {
         public void onAdShow(View view, int type) {
           Log.d(
             TAG,
-            "render onAdShow:" + (System.currentTimeMillis() - startTime)
+            "render onAdShow:" + (System.currentTimeMillis() - requestStartTime)
           );
           // TToast.show(mContext, "广告展示");
         }
@@ -238,7 +267,7 @@ public class FeedAdView extends RelativeLayout {
         @Override
         public void onRenderFail(View view, String msg, int code) {
           mIsAdLoading = false;
-          Log.d(TAG, "render fail:" + (System.currentTimeMillis() - startTime));
+          Log.d(TAG, "render fail:" + (System.currentTimeMillis() - requestStartTime));
           _this.onAdError("加载成功 渲染失败 code:" + code);
         }
 
@@ -253,6 +282,7 @@ public class FeedAdView extends RelativeLayout {
           }
           FeedAdView.this.setVisibility(mVisible ? View.VISIBLE : View.INVISIBLE);
           onAdLayout((int) width, (int) height);
+          emitV2Event("presented", null, (int) width, (int) height);
         }
       }
     );
@@ -394,6 +424,7 @@ public class FeedAdView extends RelativeLayout {
 
   // 外部事件..
   public void onAdError(String message) {
+    emitV2Event("terminal", message, 0, 0);
     WritableMap event = Arguments.createMap();
     event.putString("message", message);
     reactContext
@@ -402,6 +433,7 @@ public class FeedAdView extends RelativeLayout {
   }
 
   public void onAdClick() {
+    emitV2Event("presented", "click", null, 0, 0);
     WritableMap event = Arguments.createMap();
     reactContext
       .getJSModule(RCTEventEmitter.class)
@@ -412,6 +444,7 @@ public class FeedAdView extends RelativeLayout {
     Log.d(TAG, "onAdClose: " + reason);
     mHasRenderedAd = false;
     super.setVisibility(View.INVISIBLE);
+    emitV2Event("terminal", null, 0, 0);
     WritableMap event = Arguments.createMap();
     event.putString("reason", reason);
     reactContext
@@ -427,6 +460,50 @@ public class FeedAdView extends RelativeLayout {
     reactContext
       .getJSModule(RCTEventEmitter.class)
       .receiveEvent(getId(), "onAdLayout", event);
+  }
+
+  private void emitV2Event(String state, String errorMessage, int width, int height) {
+    emitV2Event(state, null, errorMessage, width, height);
+  }
+
+  private void emitV2Event(
+    String state,
+    String action,
+    String errorMessage,
+    int width,
+    int height
+  ) {
+    if (mRequestId.isEmpty()) {
+      return;
+    }
+    WritableMap event = Arguments.createMap();
+    event.putString("requestId", mRequestId);
+    event.putString("format", "feed");
+    event.putString("slotId", _codeid);
+    event.putString("state", state);
+    if (action != null) {
+      event.putString("action", action);
+    }
+    event.putString("source", mSource);
+    event.putDouble(
+      "elapsedMs",
+      requestStartTime > 0 ? System.currentTimeMillis() - requestStartTime : 0
+    );
+    if (width > 0) {
+      event.putInt("width", width);
+    }
+    if (height > 0) {
+      event.putInt("height", height);
+    }
+    if (errorMessage != null) {
+      WritableMap error = Arguments.createMap();
+      error.putString("code", "FEED_ERROR");
+      error.putString("message", errorMessage);
+      event.putMap("error", error);
+    }
+    reactContext
+      .getJSModule(RCTEventEmitter.class)
+      .receiveEvent(getId(), "onAdEvent", event);
   }
 
   /**

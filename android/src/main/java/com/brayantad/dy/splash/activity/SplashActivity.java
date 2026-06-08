@@ -16,6 +16,7 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.brayantad.AdManager;
 import com.brayantad.R;
+import com.brayantad.core.AdResourcePool;
 import com.brayantad.dy.DyADCore;
 import com.brayantad.dy.WeakHandler;
 import com.brayantad.utils.TToast;
@@ -52,6 +53,9 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
   private Runnable showGuardTask;
 
   private String code_id;
+  private String requestId;
+  private String preloadToken;
+  private boolean v2Settled;
 
   // 注册监听方法
   private static void sendEvent(String eventName, WritableMap params) {
@@ -78,6 +82,9 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
     // 读取 code id
     Bundle extras = getIntent().getExtras();
     code_id = extras != null ? extras.getString("codeid") : null;
+    requestId = extras != null ? extras.getString("requestId") : null;
+    preloadToken = extras != null ? extras.getString("preloadToken") : null;
+    mLoadStartTimeMs = System.currentTimeMillis();
 
     // 初始化广告 SDK
     mTTAdNative = DyADCore.TTAdSdk;
@@ -93,6 +100,17 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
     DyADCore.hookActivity(this);
 
     boolean sdkReady = TTAdSdk.isSdkReady();
+    AdResourcePool.Entry pooledEntry = AdResourcePool.consume(
+      preloadToken,
+      "splash",
+      code_id,
+      0,
+      0
+    );
+    if (pooledEntry != null && pooledEntry.resource instanceof CSJSplashAd) {
+      DyADCore.splashAd = (CSJSplashAd) pooledEntry.resource;
+      DyADCore.splashPreloadTime = System.currentTimeMillis();
+    }
     boolean hasPreloadedAd = DyADCore.splashAd != null && sdkReady && isPreloadValid();
 
     if (hasPreloadedAd) {
@@ -185,6 +203,7 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
       WritableMap params = Arguments.createMap();
       params.putString("onAdError", "广告 sdk init 异常");
       sendEvent(TAG + "-onAdError", params);
+      finishV2("failed", "广告 SDK 未初始化");
       return;
     } else {
       mTTAdNative = DyADCore.TTAdSdk;
@@ -194,6 +213,7 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
       WritableMap params = Arguments.createMap();
       params.putString("onAdError", "广告位ID为空");
       sendEvent(TAG + "-onAdError", params);
+      finishV2("failed", "广告位 ID 为空");
       goback.run();
       return;
     }
@@ -241,6 +261,7 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
           sendEvent(TAG + "-onAdError", errorParams);
 
           // 关闭开屏广告
+          finishV2("failed", errorMessage);
           goback.run();
         }
 
@@ -269,6 +290,7 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
           sendEvent(TAG + "-onAdError", params);
 
           // 关闭开屏广告
+          finishV2("failed", "广告渲染失败");
           goback.run();
         }
       },
@@ -299,6 +321,7 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
       sendEvent(TAG + "-onAdError", params);
 
       // 未知错误获取到的广告对象为空，关闭广告
+      finishV2("failed", "未拉取到开屏广告");
       goToMainActivity();
       return;
     }
@@ -328,6 +351,7 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
           WritableMap params = Arguments.createMap();
           params.putBoolean("onAdShow", true);
           sendEvent(TAG + "-onAdShow", params);
+          emitV2Event("presented", null);
         }
 
         @Override
@@ -339,6 +363,7 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
           sendEvent(TAG + "-onAdClick", params);
 
           // showToast("开屏广告点击");
+          finishV2("closed", null);
           goToMainActivity();
         }
 
@@ -351,6 +376,7 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
           sendEvent(TAG + "-onAdClose", params);
 
           // showToast("开屏广告跳过");
+          finishV2("closed", null);
           goToMainActivity();
         }
       }
@@ -367,6 +393,7 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
         WritableMap params = Arguments.createMap();
         params.putString("onAdError", "开屏广告视图为空");
         sendEvent(TAG + "-onAdError", params);
+        finishV2("failed", "开屏广告视图为空");
         goToMainActivity();
         return;
       }
@@ -385,6 +412,7 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
       WritableMap params = Arguments.createMap();
       params.putString("onAdError", "开屏广告展示超时（未触发展示回调）");
       sendEvent(TAG + "-onAdError", params);
+      finishV2("failed", "开屏广告展示超时");
       goToMainActivity();
     };
     showGuardHandler.postDelayed(showGuardTask, SHOW_GUARD_TIMEOUT);
@@ -411,6 +439,39 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
     DyADCore.rewardActivity.finish();
   }
 
+  private void emitV2Event(String state, String errorMessage) {
+    if (requestId == null || requestId.isEmpty()) {
+      return;
+    }
+    WritableMap event = Arguments.createMap();
+    event.putString("requestId", requestId);
+    event.putString("format", "splash");
+    event.putString("slotId", code_id == null ? "" : code_id);
+    event.putString("state", state);
+    event.putString("source", preloadToken == null ? "realtime" : "preloaded");
+    event.putDouble(
+      "elapsedMs",
+      mLoadStartTimeMs > 0 ? System.currentTimeMillis() - mLoadStartTimeMs : 0
+    );
+    if (errorMessage != null) {
+      WritableMap error = Arguments.createMap();
+      error.putString("code", "SPLASH_ERROR");
+      error.putString("message", errorMessage);
+      event.putMap("error", error);
+    }
+    AdManager.emitV2Event(event);
+  }
+
+  private void finishV2(String status, String errorMessage) {
+    if (v2Settled || requestId == null || requestId.isEmpty()) {
+      return;
+    }
+    v2Settled = true;
+    long elapsedMs =
+      mLoadStartTimeMs > 0 ? System.currentTimeMillis() - mLoadStartTimeMs : 0;
+    AdManager.resolveSplashV2(requestId, code_id, status, elapsedMs, errorMessage);
+  }
+
   private void showToast(String msg) {
     TToast.show(this, "splash:" + msg);
   }
@@ -420,6 +481,7 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
     if (msg.what == MSG_GO_MAIN) {
       if (!mHasLoaded) {
         showToast("加载超时");
+        finishV2("skipped", "开屏广告加载超时");
         goToMainActivity();
       }
     }

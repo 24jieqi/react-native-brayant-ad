@@ -40,10 +40,7 @@ extern NSString * const PangleFeedAdLayout;
 
 @interface PangleAdModule : RCTEventEmitter
 
-+ (instancetype)sharedInstance;
 - (NSArray<NSString *> *)supportedEvents;
-- (void)notifyAdClosed;
-- (void)flushPendingAdClosedEvent;
 
 @end
 
