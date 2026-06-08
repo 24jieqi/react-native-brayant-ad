@@ -124,21 +124,18 @@ describe('预加载令牌', () => {
     mockPreloadAd.mockReset();
   });
 
-  it('同规格多个令牌按顺序一次性领取', async () => {
+  it('同规格已有未消费令牌时复用令牌且不重复请求原生模块', async () => {
     const firstRequest = createRequest('feed-1');
     const secondRequest = createRequest('feed-2');
     const firstToken = createToken(firstRequest, 'token-1');
-    const secondToken = createToken(secondRequest, 'token-2');
-    mockPreloadAd
-      .mockResolvedValueOnce(firstToken)
-      .mockResolvedValueOnce(secondToken);
+    mockPreloadAd.mockResolvedValue(firstToken);
 
     await preloadFeedAd(firstRequest);
-    await preloadFeedAd(secondRequest);
+    await expect(preloadFeedAd(secondRequest)).resolves.toEqual(firstToken);
 
     expect(claimPreloadToken(firstRequest)).toEqual(firstToken);
-    expect(claimPreloadToken(firstRequest)).toEqual(secondToken);
     expect(claimPreloadToken(firstRequest)).toBeUndefined();
+    expect(mockPreloadAd).toHaveBeenCalledTimes(1);
   });
 
   it('忽略过期令牌', async () => {
@@ -152,8 +149,9 @@ describe('预加载令牌', () => {
     expect(claimPreloadToken(request)).toBeUndefined();
   });
 
-  it('同一请求并发预加载只调用一次原生模块', async () => {
+  it('同规格不同请求并发预加载只调用一次原生模块', async () => {
     const request = createRequest('feed-deduplicated');
+    const anotherRequest = createRequest('feed-deduplicated-2');
     let resolvePreload: ((value: AdPreloadToken) => void) | undefined;
     mockPreloadAd.mockReturnValue(
       new Promise<AdPreloadToken>((resolve) => {
@@ -162,7 +160,7 @@ describe('预加载令牌', () => {
     );
 
     const first = preloadFeedAd(request);
-    const second = preloadFeedAd(request);
+    const second = preloadFeedAd(anotherRequest);
 
     expect(mockPreloadAd).toHaveBeenCalledTimes(1);
     resolvePreload?.(createToken(request, 'deduplicated'));

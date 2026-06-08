@@ -38,21 +38,28 @@ export const BannerAd = ({
   style,
   onEvent,
 }: InlineAdProps) => {
-  const [candidateIndex, setCandidateIndex] = useState(0);
   const width = request.size?.width ?? 320;
   const height = request.size?.height ?? 50;
   const effectiveToken = useMemo(
     () => preloadToken ?? claimPreloadToken(request),
     [preloadToken, request]
   );
+  const initialCandidateIndex = useMemo(() => {
+    if (!effectiveToken) {
+      return 0;
+    }
+    const tokenIndex = request.slotIds.indexOf(effectiveToken.slotId);
+    return tokenIndex >= 0 ? tokenIndex : 0;
+  }, [effectiveToken, request.slotIds]);
+  const [candidateIndex, setCandidateIndex] = useState(initialCandidateIndex);
   const slotId = useMemo(
     () => resolveAdSlotId(request, candidateIndex, effectiveToken),
     [candidateIndex, effectiveToken, request]
   );
 
   useEffect(() => {
-    setCandidateIndex(0);
-  }, [request.requestId]);
+    setCandidateIndex(initialCandidateIndex);
+  }, [initialCandidateIndex, request.requestId]);
 
   const handleEvent = useCallback(
     (event: AdEvent) => {

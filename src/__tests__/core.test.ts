@@ -102,7 +102,7 @@ describe('候选广告位', () => {
     expect(resolveAdSlotId(request, 1)).toBe('secondary');
   });
 
-  it('成功、点击、最后一个广告位或预加载资源不触发回退', () => {
+  it('成功、点击或最后一个广告位不触发回退', () => {
     expect(
       shouldTryNextCandidate({
         candidateIndex: 0,
@@ -127,26 +127,30 @@ describe('候选广告位', () => {
         slotCount: 2,
       })
     ).toBe(false);
+  });
+
+  it('预加载资源失败后继续尝试后续备用广告位', () => {
     expect(
       shouldTryNextCandidate({
         candidateIndex: 0,
-        event: failedEvent,
+        event: { ...failedEvent, source: 'preloaded' },
         hasPreloadToken: true,
         slotCount: 2,
       })
-    ).toBe(false);
+    ).toBe(true);
   });
 
-  it('预加载令牌固定使用令牌对应的广告位', () => {
+  it('预加载令牌先使用令牌广告位，失败后按请求顺序继续', () => {
     const token: AdPreloadToken = {
       token: 'token-1',
       requestId: 'preload-1',
       format: 'feed',
-      slotId: 'preloaded-slot',
+      slotId: 'primary',
       expiresAt: Date.now() + 60_000,
     };
 
-    expect(resolveAdSlotId(request, 1, token)).toBe('preloaded-slot');
+    expect(resolveAdSlotId(request, 0, token)).toBe('primary');
+    expect(resolveAdSlotId(request, 1, token)).toBe('secondary');
   });
 
   it('忽略其他请求、其他广告位和已切换广告位的迟到事件', () => {

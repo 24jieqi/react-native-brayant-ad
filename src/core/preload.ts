@@ -24,7 +24,18 @@ const preload = (
     );
   }
 
-  const currentTask = preloadTasks.get(request.requestId);
+  const profileKey = getProfileKey(request);
+  const now = Date.now();
+  const validTokens = (preloadedTokens.get(profileKey) ?? []).filter(
+    (item) => item.expiresAt > now
+  );
+  if (validTokens.length > 0) {
+    preloadedTokens.set(profileKey, validTokens);
+    return Promise.resolve(validTokens[0] as AdPreloadToken);
+  }
+  preloadedTokens.delete(profileKey);
+
+  const currentTask = preloadTasks.get(profileKey);
   if (currentTask) {
     return currentTask;
   }
@@ -32,16 +43,11 @@ const preload = (
   const task = getNativeAdV2Module()
     .preloadAd(request)
     .then((token) => {
-      const profileKey = getProfileKey(request);
-      const tokens = preloadedTokens.get(profileKey) ?? [];
-      preloadedTokens.set(profileKey, [
-        ...tokens.filter((item) => item.expiresAt > Date.now()),
-        token,
-      ]);
+      preloadedTokens.set(profileKey, [token]);
       return token;
     })
-    .finally(() => preloadTasks.delete(request.requestId));
-  preloadTasks.set(request.requestId, task);
+    .finally(() => preloadTasks.delete(profileKey));
+  preloadTasks.set(profileKey, task);
   return task;
 };
 

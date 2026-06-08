@@ -4,7 +4,18 @@ export const resolveAdSlotId = (
   request: AdRequest,
   candidateIndex: number,
   preloadToken?: AdPreloadToken
-): string => preloadToken?.slotId ?? request.slotIds[candidateIndex] ?? '';
+): string => {
+  const preloadCandidateIndex = preloadToken
+    ? request.slotIds.indexOf(preloadToken.slotId)
+    : -1;
+  if (
+    preloadToken &&
+    (preloadCandidateIndex < 0 || candidateIndex === preloadCandidateIndex)
+  ) {
+    return preloadToken.slotId;
+  }
+  return request.slotIds[candidateIndex] ?? '';
+};
 
 export const isEventForCurrentCandidate = ({
   event,
@@ -19,7 +30,7 @@ export const isEventForCurrentCandidate = ({
 export const shouldTryNextCandidate = ({
   candidateIndex,
   event,
-  hasPreloadToken,
+  hasPreloadToken: _hasPreloadToken,
   slotCount,
 }: {
   candidateIndex: number;
@@ -27,7 +38,6 @@ export const shouldTryNextCandidate = ({
   hasPreloadToken: boolean;
   slotCount: number;
 }): boolean =>
-  !hasPreloadToken &&
   event.state === 'terminal' &&
   Boolean(event.error) &&
   candidateIndex < slotCount - 1;
