@@ -1,5 +1,6 @@
 package com.brayantad;
 
+import android.content.Context;
 import android.content.Intent;
 import android.util.Log;
 
@@ -23,6 +24,7 @@ import com.facebook.react.bridge.ReadableArray;
 import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.ReadableType;
 import com.facebook.react.bridge.WritableMap;
+import com.facebook.react.bridge.UiThreadUtil;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 
 import java.util.List;
@@ -54,25 +56,7 @@ public class AdManager extends ReactContextBaseJavaModule {
     DyADCore.appName = options.hasKey("app") ? options.getString("app") : DyADCore.appName;
 
     if (DyADCore.tt_appid != null) {
-      DyADCore.initSdk(reactAppContext, DyADCore.tt_appid, DyADCore.debug);
-      boolean sdkReady = TTAdSdk.isSdkReady();
-      if (!sdkReady) {
-        TTAdSdk.start(new TTAdSdk.Callback() {
-          @Override
-          public void success() {
-            Log.i(TAG, "success: " + TTAdSdk.isSdkReady());
-            promise.resolve(true);
-          }
-
-          @Override
-          public void fail(int code, String msg) {
-            Log.i(TAG, "fail:  code = " + code + " msg = " + msg);
-            promise.reject(TAG, "fail:  code = " + code + " msg = " + msg);
-          }
-        });
-        return;
-      }
-      promise.resolve(true);
+      initializeSdkOnUiThread(DyADCore.tt_appid, promise);
       return;
 //      if (options.hasKey("codeid_reward_video")) {
 //        DyADCore.codeid_reward_video = options.getString("codeid_reward_video");
@@ -131,24 +115,46 @@ public class AdManager extends ReactContextBaseJavaModule {
     DyADCore.appName = options.hasKey("appName")
       ? options.getString("appName")
       : DyADCore.appName;
-    DyADCore.initSdk(reactAppContext, appId, DyADCore.debug);
+    initializeSdkOnUiThread(appId, promise);
+  }
 
-    if (TTAdSdk.isSdkReady()) {
-      promise.resolve(true);
-      return;
-    }
+  private void initializeSdkOnUiThread(String appId, Promise promise) {
+    UiThreadUtil.runOnUiThread(() -> {
+      try {
+        DyADCore.initSdk(reactAppContext, appId, DyADCore.debug);
+        if (TTAdSdk.isSdkReady()) {
+          prepareAdNative();
+          promise.resolve(true);
+          return;
+        }
 
-    TTAdSdk.start(new TTAdSdk.Callback() {
-      @Override
-      public void success() {
-        promise.resolve(true);
-      }
+        TTAdSdk.start(new TTAdSdk.Callback() {
+          @Override
+          public void success() {
+            try {
+              prepareAdNative();
+              Log.i(TAG, "广告 SDK 启动成功: " + TTAdSdk.isSdkReady());
+              promise.resolve(true);
+            } catch (RuntimeException exception) {
+              promise.reject(TAG, "创建广告加载器失败", exception);
+            }
+          }
 
-      @Override
-      public void fail(int code, String msg) {
-        promise.reject(TAG, "SDK init failed: " + code + ", " + msg);
+          @Override
+          public void fail(int code, String msg) {
+            Log.e(TAG, "广告 SDK 启动失败: code = " + code + ", msg = " + msg);
+            promise.reject(TAG, "广告 SDK 初始化失败: " + code + ", " + msg);
+          }
+        });
+      } catch (RuntimeException exception) {
+        promise.reject(TAG, "广告 SDK 初始化失败", exception);
       }
     });
+  }
+
+  private void prepareAdNative() {
+    Context context = getCurrentActivity();
+    DyADCore.prepareAdNative(context != null ? context : reactAppContext);
   }
 
   @ReactMethod
@@ -536,6 +542,8 @@ public class AdManager extends ReactContextBaseJavaModule {
   @ReactMethod
   public void requestPermission() {
     // step3:(可选，强烈建议在合适的时机调用):申请部分权限，如read_phone_state,防止获取不了imei时候，下载类广告没有填充的问题。
-    DyADCore.ttAdManager.requestPermissionIfNecessary(reactAppContext);
+    if (DyADCore.ttAdManager != null) {
+      DyADCore.ttAdManager.requestPermissionIfNecessary(reactAppContext);
+    }
   }
 }

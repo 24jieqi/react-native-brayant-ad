@@ -83,7 +83,7 @@ public class DyADCore {
   public static final long SPLASH_PRELOAD_VALID_DURATION = 5 * 60 * 1000; // 预加载有效期5分钟
 
   public static void initSdk(Context context, String appId, Boolean debug) {
-    if (TTAdSdk != null && Objects.equals(tt_appid, appId)) {
+    if (TTAdManagerHolder.sInit && Objects.equals(tt_appid, appId)) {
       //已初始化
       Log.d(TAG, "已初始化 TTAdSdk tt_appid " + tt_appid);
       return;
@@ -98,10 +98,10 @@ public class DyADCore {
 
     // step1: 初始化sdk appid
     TTAdManagerHolder.init(context, appId, debug);
-    // step2:创建TTAdNative对象，createAdNative(Context context)
-    // feed广告context需要传入Activity对象
-    ttAdManager = TTAdManagerHolder.get();
+  }
 
+  public static void prepareAdNative(Context context) {
+    ttAdManager = TTAdManagerHolder.get();
     TTAdSdk = ttAdManager.createAdNative(context);
   }
 
