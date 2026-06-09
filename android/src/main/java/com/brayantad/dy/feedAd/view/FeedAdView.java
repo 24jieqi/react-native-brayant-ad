@@ -140,6 +140,13 @@ public class FeedAdView extends RelativeLayout {
     mContext = activity;
     mIsAdLoading = true;
     requestStartTime = System.currentTimeMillis();
+    Log.d(
+      TAG,
+      "请求广告: requestId=" + mRequestId +
+        ", slotId=" + _codeid +
+        ", expectedWidth=" + _expectedWidth + "dp" +
+        ", view=" + getWidth() + "x" + getHeight() + "px"
+    );
     emitV2Event("loading", null, 0, 0);
 
     AdResourcePool.Entry pooledEntry = AdResourcePool.consume(
@@ -273,6 +280,12 @@ public class FeedAdView extends RelativeLayout {
 
         @Override
         public void onRenderSuccess(View view, float width, float height) {
+          Log.d(
+            TAG,
+            "渲染成功: requestId=" + mRequestId +
+              ", sdk=" + width + "x" + height + "dp" +
+              ", view=" + getWidth() + "x" + getHeight() + "px"
+          );
           mIsAdLoading = false;
           mHasRenderedAd = true;
           RelativeLayout mExpressContainer = findViewById(R.id.feed_container);

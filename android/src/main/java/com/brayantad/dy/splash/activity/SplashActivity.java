@@ -306,6 +306,11 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
     // 按屏幕尺寸动态设置模板大小，避免固定超大尺寸导致低填充
     widthDp = Math.max(widthDp, 320);
     heightDp = Math.max(heightDp, 480);
+    Log.d(
+      TAG,
+      "实时开屏请求尺寸: " + widthDp + "x" + heightDp +
+        "dp, screen=" + metrics.widthPixels + "x" + metrics.heightPixels + "px"
+    );
 
     return new int[]{widthDp, heightDp};
   }
@@ -384,6 +389,11 @@ public class SplashActivity extends AppCompatActivity implements WeakHandler.IHa
 
     // 使用 SDK 展示接口，避免 getSplashView 直塞导致的首帧异常
     mSplashContainer.removeAllViews();
+    Log.d(
+      TAG,
+      "展示开屏广告: container=" +
+        mSplashContainer.getWidth() + "x" + mSplashContainer.getHeight() + "px"
+    );
     try {
       ad.showSplashView(mSplashContainer);
     } catch (Throwable showError) {

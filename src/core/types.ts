@@ -1,4 +1,4 @@
-import type { ViewStyle } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
 
 export type AdFormat = 'feed' | 'banner' | 'splash';
 
@@ -76,6 +76,6 @@ export interface InlineAdProps {
   request: AdRequest;
   preloadToken?: AdPreloadToken;
   visible?: boolean;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   onEvent?: (event: AdEvent) => void;
 }

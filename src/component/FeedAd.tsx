@@ -2,10 +2,11 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Platform,
   requireNativeComponent,
+  StyleSheet,
   UIManager,
   View,
 } from 'react-native';
-import type { NativeSyntheticEvent } from 'react-native';
+import type { NativeSyntheticEvent, StyleProp, ViewStyle } from 'react-native';
 import type { AdEvent, InlineAdProps } from '../core/types';
 import { claimPreloadToken } from '../core/preload';
 import {
@@ -15,6 +16,7 @@ import {
 } from '../core/candidates';
 
 interface NativeFeedAdProps {
+  style?: StyleProp<ViewStyle>;
   requestId: string;
   codeid: string;
   preloadToken?: string;
@@ -38,6 +40,9 @@ export const FeedAd = ({
   onEvent,
 }: InlineAdProps) => {
   const width = request.size?.width ?? 375;
+  const [renderedHeight, setRenderedHeight] = useState(
+    request.size?.height ?? 1
+  );
   const effectiveToken = useMemo(
     () => preloadToken ?? claimPreloadToken(request),
     [preloadToken, request]
@@ -57,7 +62,8 @@ export const FeedAd = ({
 
   useEffect(() => {
     setCandidateIndex(initialCandidateIndex);
-  }, [initialCandidateIndex, request.requestId]);
+    setRenderedHeight(request.size?.height ?? 1);
+  }, [initialCandidateIndex, request.requestId, request.size?.height]);
 
   const handleEvent = useCallback(
     (event: AdEvent) => {
@@ -69,6 +75,9 @@ export const FeedAd = ({
         })
       ) {
         return;
+      }
+      if (event.state === 'presented' && event.height && event.height > 0) {
+        setRenderedHeight(Math.ceil(event.height));
       }
       const shouldTryNext = shouldTryNextCandidate({
         candidateIndex,
@@ -107,9 +116,10 @@ export const FeedAd = ({
   }
 
   return (
-    <View style={style}>
+    <View style={[{ width, height: renderedHeight }, style]}>
       <NativeFeedAd
         key={`${request.requestId}:${slotId}`}
+        style={StyleSheet.absoluteFillObject}
         requestId={request.requestId}
         codeid={slotId}
         preloadToken={effectiveToken?.token}

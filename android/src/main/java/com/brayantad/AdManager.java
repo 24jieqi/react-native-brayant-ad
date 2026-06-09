@@ -2,6 +2,7 @@ package com.brayantad;
 
 import android.content.Context;
 import android.content.Intent;
+import android.util.DisplayMetrics;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -242,10 +243,20 @@ public class AdManager extends ReactContextBaseJavaModule {
     int height,
     Promise promise
   ) {
+    DisplayMetrics metrics = reactAppContext.getResources().getDisplayMetrics();
+    int resolvedWidth =
+      width > 0 ? width : Math.round(metrics.widthPixels / metrics.density);
+    int resolvedHeight =
+      height > 0 ? height : Math.round(metrics.heightPixels / metrics.density);
+    Log.d(
+      TAG,
+      "预加载开屏广告: slotId=" + slotId +
+        ", size=" + resolvedWidth + "x" + resolvedHeight + "dp"
+    );
     AdSlot adSlot = new AdSlot.Builder()
       .setCodeId(slotId)
       .setSupportDeepLink(true)
-      .setExpressViewAcceptedSize(width > 0 ? width : 320, height > 0 ? height : 480)
+      .setExpressViewAcceptedSize(resolvedWidth, resolvedHeight)
       .build();
     DyADCore.TTAdSdk.loadSplashAd(
       adSlot,
@@ -264,8 +275,8 @@ public class AdManager extends ReactContextBaseJavaModule {
             requestId,
             "splash",
             slotId,
-            width,
-            height,
+            resolvedWidth,
+            resolvedHeight,
             ad
           );
           promise.resolve(toTokenMap(entry));

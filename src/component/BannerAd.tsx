@@ -2,10 +2,11 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Platform,
   requireNativeComponent,
+  StyleSheet,
   UIManager,
   View,
 } from 'react-native';
-import type { NativeSyntheticEvent } from 'react-native';
+import type { NativeSyntheticEvent, StyleProp, ViewStyle } from 'react-native';
 import type { AdEvent, InlineAdProps } from '../core/types';
 import { claimPreloadToken } from '../core/preload';
 import {
@@ -15,6 +16,7 @@ import {
 } from '../core/candidates';
 
 interface NativeBannerAdProps {
+  style?: StyleProp<ViewStyle>;
   requestId: string;
   codeid: string;
   preloadToken?: string;
@@ -109,9 +111,10 @@ export const BannerAd = ({
   }
 
   return (
-    <View style={style}>
+    <View style={[{ width, height }, style]}>
       <NativeBannerAd
         key={`${request.requestId}:${slotId}`}
+        style={StyleSheet.absoluteFillObject}
         requestId={request.requestId}
         codeid={slotId}
         preloadToken={effectiveToken?.token}

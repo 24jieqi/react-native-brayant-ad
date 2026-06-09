@@ -3,6 +3,7 @@ package com.brayantad.dy.banner.view;
 import static com.facebook.react.bridge.UiThreadUtil.runOnUiThread;
 
 import android.app.Activity;
+import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.RelativeLayout;
@@ -21,6 +22,7 @@ import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.uimanager.events.RCTEventEmitter;
 
 public class BannerAdView extends RelativeLayout {
+  private static final String TAG = "BrayantBannerAd";
   private Activity mActivity;
   private ReactContext mReactContext;
   private String mCodeId;
@@ -137,6 +139,13 @@ public class BannerAdView extends RelativeLayout {
     // 在UI线程加载广告
     mIsAdLoading = true;
     mRequestStartTime = System.currentTimeMillis();
+    Log.d(
+      TAG,
+      "请求广告: requestId=" + mRequestId +
+        ", slotId=" + mCodeId +
+        ", expected=" + mExpectedWidth + "x" + mExpectedHeight + "dp" +
+        ", view=" + getWidth() + "x" + getHeight() + "px"
+    );
     emitV2Event("loading", null, 0, 0);
     runOnUiThread(this::loadBannerAd);
   }
@@ -258,6 +267,12 @@ public class BannerAdView extends RelativeLayout {
 
         @Override
         public void onRenderSuccess(View view, float width, float height) {
+          Log.d(
+            TAG,
+            "渲染成功: requestId=" + mRequestId +
+              ", sdk=" + width + "x" + height + "dp" +
+              ", view=" + getWidth() + "x" + getHeight() + "px"
+          );
           mHasRenderedAd = true;
           attachRenderedAdView(view, (int) width, (int) height);
           onAdRenderSuccess((int) width, (int) height);
