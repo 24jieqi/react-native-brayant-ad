@@ -4,6 +4,7 @@
 //
 
 #import "SplashAd.h"
+#import "PangleAdModule.h"
 #import <BUAdSDK/BUSplashAd.h>
 
 @interface SplashAd () <BUSplashAdDelegate>
