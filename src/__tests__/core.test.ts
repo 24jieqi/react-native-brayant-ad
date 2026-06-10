@@ -1,6 +1,6 @@
 import {
   isEventForCurrentCandidate,
-  resolveAdSlotId,
+  resolveAdSlotIds,
   shouldTryNextCandidate,
 } from '../core/candidates';
 import { createAdRequest } from '../core/request';
@@ -95,11 +95,10 @@ describe('候选广告位', () => {
       shouldTryNextCandidate({
         candidateIndex: 0,
         event: failedEvent,
-        hasPreloadToken: false,
         slotCount: request.slotIds.length,
       })
     ).toBe(true);
-    expect(resolveAdSlotId(request, 1)).toBe('secondary');
+    expect(resolveAdSlotIds(request)).toEqual(['primary', 'secondary']);
   });
 
   it('成功、点击或最后一个广告位不触发回退', () => {
@@ -107,7 +106,6 @@ describe('候选广告位', () => {
       shouldTryNextCandidate({
         candidateIndex: 0,
         event: { ...failedEvent, state: 'presented', error: undefined },
-        hasPreloadToken: false,
         slotCount: 2,
       })
     ).toBe(false);
@@ -115,7 +113,6 @@ describe('候选广告位', () => {
       shouldTryNextCandidate({
         candidateIndex: 0,
         event: { ...failedEvent, action: 'click', error: undefined },
-        hasPreloadToken: false,
         slotCount: 2,
       })
     ).toBe(false);
@@ -123,7 +120,6 @@ describe('候选广告位', () => {
       shouldTryNextCandidate({
         candidateIndex: 1,
         event: failedEvent,
-        hasPreloadToken: false,
         slotCount: 2,
       })
     ).toBe(false);
@@ -134,7 +130,6 @@ describe('候选广告位', () => {
       shouldTryNextCandidate({
         candidateIndex: 0,
         event: { ...failedEvent, source: 'preloaded' },
-        hasPreloadToken: true,
         slotCount: 2,
       })
     ).toBe(true);
@@ -149,8 +144,19 @@ describe('候选广告位', () => {
       expiresAt: Date.now() + 60_000,
     };
 
-    expect(resolveAdSlotId(request, 0, token)).toBe('primary');
-    expect(resolveAdSlotId(request, 1, token)).toBe('secondary');
+    expect(resolveAdSlotIds(request, token)).toEqual(['primary', 'secondary']);
+  });
+
+  it('预加载命中备用广告位时，失败后仍会尝试主广告位', () => {
+    const token: AdPreloadToken = {
+      token: 'token-secondary',
+      requestId: 'preload-secondary',
+      format: 'feed',
+      slotId: 'secondary',
+      expiresAt: Date.now() + 60_000,
+    };
+
+    expect(resolveAdSlotIds(request, token)).toEqual(['secondary', 'primary']);
   });
 
   it('忽略其他请求、其他广告位和已切换广告位的迟到事件', () => {

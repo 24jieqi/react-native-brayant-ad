@@ -77,5 +77,6 @@ export interface InlineAdProps {
   preloadToken?: AdPreloadToken;
   visible?: boolean;
   style?: StyleProp<ViewStyle>;
+  candidateTimeoutMs?: number;
   onEvent?: (event: AdEvent) => void;
 }

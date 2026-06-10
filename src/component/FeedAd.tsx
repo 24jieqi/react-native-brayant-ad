@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Platform,
   requireNativeComponent,
@@ -11,9 +17,11 @@ import type { AdEvent, InlineAdProps } from '../core/types';
 import { claimPreloadToken } from '../core/preload';
 import {
   isEventForCurrentCandidate,
-  resolveAdSlotId,
+  resolveAdSlotIds,
   shouldTryNextCandidate,
 } from '../core/candidates';
+
+const DEFAULT_CANDIDATE_TIMEOUT_MS = 6000;
 
 interface NativeFeedAdProps {
   style?: StyleProp<ViewStyle>;
@@ -37,6 +45,7 @@ export const FeedAd = ({
   preloadToken,
   visible = true,
   style,
+  candidateTimeoutMs = DEFAULT_CANDIDATE_TIMEOUT_MS,
   onEvent,
 }: InlineAdProps) => {
   const width = request.size?.width ?? 375;
@@ -47,23 +56,75 @@ export const FeedAd = ({
     () => preloadToken ?? claimPreloadToken(request),
     [preloadToken, request]
   );
-  const initialCandidateIndex = useMemo(() => {
-    if (!effectiveToken) {
-      return 0;
-    }
-    const tokenIndex = request.slotIds.indexOf(effectiveToken.slotId);
-    return tokenIndex >= 0 ? tokenIndex : 0;
-  }, [effectiveToken, request.slotIds]);
-  const [candidateIndex, setCandidateIndex] = useState(initialCandidateIndex);
-  const slotId = useMemo(
-    () => resolveAdSlotId(request, candidateIndex, effectiveToken),
-    [candidateIndex, effectiveToken, request]
+  const candidateSlotIds = useMemo(
+    () => resolveAdSlotIds(request, effectiveToken),
+    [effectiveToken, request]
   );
+  const [candidateIndex, setCandidateIndex] = useState(0);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onEventRef = useRef(onEvent);
+  const slotId = candidateSlotIds[candidateIndex] ?? '';
 
   useEffect(() => {
-    setCandidateIndex(initialCandidateIndex);
+    onEventRef.current = onEvent;
+  }, [onEvent]);
+
+  const clearCandidateTimeout = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    setCandidateIndex(0);
     setRenderedHeight(request.size?.height ?? 1);
-  }, [initialCandidateIndex, request.requestId, request.size?.height]);
+  }, [candidateSlotIds, request.requestId, request.size?.height]);
+
+  useEffect(() => {
+    clearCandidateTimeout();
+    if (!visible || !slotId || candidateTimeoutMs <= 0) {
+      return;
+    }
+
+    const startedAt = Date.now();
+    timeoutRef.current = setTimeout(() => {
+      timeoutRef.current = null;
+      if (candidateIndex < candidateSlotIds.length - 1) {
+        setCandidateIndex((index) =>
+          index === candidateIndex ? index + 1 : index
+        );
+        return;
+      }
+
+      onEventRef.current?.({
+        requestId: request.requestId,
+        format: 'feed',
+        slotId,
+        state: 'terminal',
+        source:
+          candidateIndex === 0 && effectiveToken?.slotId === slotId
+            ? 'preloaded'
+            : 'realtime',
+        elapsedMs: Date.now() - startedAt,
+        error: {
+          code: 'FEED_TIMEOUT',
+          message: `信息流广告位 ${slotId} 加载或渲染超时`,
+        },
+      });
+    }, candidateTimeoutMs);
+
+    return clearCandidateTimeout;
+  }, [
+    candidateIndex,
+    candidateSlotIds.length,
+    candidateTimeoutMs,
+    clearCandidateTimeout,
+    effectiveToken?.slotId,
+    request.requestId,
+    slotId,
+    visible,
+  ]);
 
   const handleEvent = useCallback(
     (event: AdEvent) => {
@@ -76,14 +137,19 @@ export const FeedAd = ({
       ) {
         return;
       }
-      if (event.state === 'presented' && event.height && event.height > 0) {
-        setRenderedHeight(Math.ceil(event.height));
+      if (event.state === 'presented') {
+        clearCandidateTimeout();
+        if (event.height && event.height > 0) {
+          setRenderedHeight(Math.ceil(event.height));
+        }
+      }
+      if (event.state === 'terminal') {
+        clearCandidateTimeout();
       }
       const shouldTryNext = shouldTryNextCandidate({
         candidateIndex,
         event,
-        hasPreloadToken: Boolean(effectiveToken),
-        slotCount: request.slotIds.length,
+        slotCount: candidateSlotIds.length,
       });
       if (shouldTryNext) {
         setCandidateIndex((index) =>
@@ -91,14 +157,13 @@ export const FeedAd = ({
         );
         return;
       }
-      onEvent?.(event);
+      onEventRef.current?.(event);
     },
     [
       candidateIndex,
-      effectiveToken,
-      onEvent,
+      candidateSlotIds.length,
+      clearCandidateTimeout,
       request.requestId,
-      request.slotIds.length,
       slotId,
     ]
   );
@@ -122,7 +187,11 @@ export const FeedAd = ({
         style={StyleSheet.absoluteFillObject}
         requestId={request.requestId}
         codeid={slotId}
-        preloadToken={effectiveToken?.token}
+        preloadToken={
+          candidateIndex === 0 && effectiveToken?.slotId === slotId
+            ? effectiveToken.token
+            : undefined
+        }
         adWidth={width}
         visible={visible}
         onAdEvent={(event) => handleEvent(event.nativeEvent)}

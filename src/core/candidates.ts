@@ -1,5 +1,19 @@
 import type { AdEvent, AdPreloadToken, AdRequest } from './types';
 
+export const resolveAdSlotIds = (
+  request: AdRequest,
+  preloadToken?: AdPreloadToken
+): string[] => {
+  if (!preloadToken) {
+    return request.slotIds;
+  }
+
+  return [
+    preloadToken.slotId,
+    ...request.slotIds.filter((slotId) => slotId !== preloadToken.slotId),
+  ];
+};
+
 export const resolveAdSlotId = (
   request: AdRequest,
   candidateIndex: number,
@@ -30,12 +44,11 @@ export const isEventForCurrentCandidate = ({
 export const shouldTryNextCandidate = ({
   candidateIndex,
   event,
-  hasPreloadToken: _hasPreloadToken,
   slotCount,
 }: {
   candidateIndex: number;
   event: AdEvent;
-  hasPreloadToken: boolean;
+  hasPreloadToken?: boolean;
   slotCount: number;
 }): boolean =>
   event.state === 'terminal' &&
