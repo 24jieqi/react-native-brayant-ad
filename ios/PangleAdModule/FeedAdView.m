@@ -201,12 +201,12 @@
 
 - (void)expressAdDidShow {
   RCTLog(@"[FeedAdView] 广告展示");
-  if (self.didSendLayoutEvent || !self.onAdLayout) {
+  if (self.didSendLayoutEvent) {
     return;
   }
 
   dispatch_async(dispatch_get_main_queue(), ^{
-    if (self.didSendLayoutEvent || !self.onAdLayout) {
+    if (self.didSendLayoutEvent) {
       return;
     }
 
@@ -219,10 +219,12 @@
     }
 
     self.didSendLayoutEvent = YES;
-    self.onAdLayout(@{
-      @"width" : @(width),
-      @"height" : @(height),
-    });
+    if (self.onAdLayout) {
+      self.onAdLayout(@{
+        @"width" : @(width),
+        @"height" : @(height),
+      });
+    }
     [self emitEventWithState:@"presented"
                        error:nil
                        width:width
