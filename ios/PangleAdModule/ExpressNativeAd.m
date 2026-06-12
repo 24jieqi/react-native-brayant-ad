@@ -137,8 +137,8 @@
       postNotificationName:@"PangleExpressNativeAdRenderSuccess"
                     object:nil];
 
-  if ([self.delegate respondsToSelector:@selector(expressAdDidShow)]) {
-    [self.delegate expressAdDidShow];
+  if ([self.delegate respondsToSelector:@selector(expressAdDidRender)]) {
+    [self.delegate expressAdDidRender];
   }
   if (self.loadCompletion) {
     self.loadCompletion(YES, nil);
@@ -163,6 +163,16 @@
   if (self.loadCompletion) {
     self.loadCompletion(NO, error);
     self.loadCompletion = nil;
+  }
+}
+
+- (void)nativeExpressAdViewWillShow:
+    (BUNativeExpressAdView *)nativeExpressAdView {
+  if (nativeExpressAdView != self.expressAdView) {
+    return;
+  }
+  if ([self.delegate respondsToSelector:@selector(expressAdDidShow)]) {
+    [self.delegate expressAdDidShow];
   }
 }
 

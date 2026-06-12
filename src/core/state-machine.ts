@@ -7,8 +7,9 @@ import type {
 const transitions: Record<AdLifecycleState, readonly AdLifecycleState[]> = {
   idle: ['loading', 'terminal'],
   loading: ['loaded', 'terminal'],
-  loaded: ['rendering', 'presented', 'terminal'],
-  rendering: ['presented', 'terminal'],
+  loaded: ['rendering', 'rendered', 'presented', 'terminal'],
+  rendering: ['rendered', 'presented', 'terminal'],
+  rendered: ['presented', 'terminal'],
   presented: ['terminal'],
   terminal: [],
 };

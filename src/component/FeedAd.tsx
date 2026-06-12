@@ -63,6 +63,7 @@ export const FeedAd = ({
   const [candidateIndex, setCandidateIndex] = useState(0);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onEventRef = useRef(onEvent);
+  const forwardedEventKeysRef = useRef<Set<string>>(new Set());
   const slotId = candidateSlotIds[candidateIndex] ?? '';
 
   useEffect(() => {
@@ -79,6 +80,7 @@ export const FeedAd = ({
   useEffect(() => {
     setCandidateIndex(0);
     setRenderedHeight(request.size?.height ?? 1);
+    forwardedEventKeysRef.current.clear();
   }, [candidateSlotIds, request.requestId, request.size?.height]);
 
   useEffect(() => {
@@ -137,7 +139,7 @@ export const FeedAd = ({
       ) {
         return;
       }
-      if (event.state === 'presented') {
+      if (event.state === 'rendered' || event.state === 'presented') {
         clearCandidateTimeout();
         if (event.height && event.height > 0) {
           setRenderedHeight(Math.ceil(event.height));
@@ -157,6 +159,11 @@ export const FeedAd = ({
         );
         return;
       }
+      const eventKey = `${event.slotId}:${event.state}:${event.action ?? ''}`;
+      if (forwardedEventKeysRef.current.has(eventKey)) {
+        return;
+      }
+      forwardedEventKeysRef.current.add(eventKey);
       onEventRef.current?.(event);
     },
     [

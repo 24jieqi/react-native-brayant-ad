@@ -49,6 +49,8 @@ public class FeedAdView extends RelativeLayout {
   private boolean mIsAdLoading = false;
   private boolean mVisible = true;
   private boolean mHasRenderedAd = false;
+  private boolean mHasPresentedAd = false;
+  private boolean mPendingPresentation = false;
 
   // 当前展示的广告实例，用于资源释放
   private TTNativeExpressAd mCurrentAd;
@@ -139,6 +141,9 @@ public class FeedAdView extends RelativeLayout {
     }
     mContext = activity;
     mIsAdLoading = true;
+    mHasRenderedAd = false;
+    mHasPresentedAd = false;
+    mPendingPresentation = false;
     requestStartTime = System.currentTimeMillis();
     Log.d(
       TAG,
@@ -257,6 +262,9 @@ public class FeedAdView extends RelativeLayout {
 
         @Override
         public void onAdClicked(View view, int type) {
+          if (ad != mCurrentAd) {
+            return;
+          }
           Log.d(TAG, "feed ad clicked");
           // TToast.show(mContext, "广告被点击");
           onAdClick();
@@ -264,15 +272,26 @@ public class FeedAdView extends RelativeLayout {
 
         @Override
         public void onAdShow(View view, int type) {
+          if (ad != mCurrentAd || mHasPresentedAd) {
+            return;
+          }
+          if (!mHasRenderedAd) {
+            mPendingPresentation = true;
+            return;
+          }
+          mHasPresentedAd = true;
           Log.d(
             TAG,
             "render onAdShow:" + (System.currentTimeMillis() - requestStartTime)
           );
-          // TToast.show(mContext, "广告展示");
+          emitV2Event("presented", null, 0, 0);
         }
 
         @Override
         public void onRenderFail(View view, String msg, int code) {
+          if (ad != mCurrentAd) {
+            return;
+          }
           mIsAdLoading = false;
           Log.d(TAG, "render fail:" + (System.currentTimeMillis() - requestStartTime));
           _this.onAdError("加载成功 渲染失败 code:" + code);
@@ -280,6 +299,9 @@ public class FeedAdView extends RelativeLayout {
 
         @Override
         public void onRenderSuccess(View view, float width, float height) {
+          if (ad != mCurrentAd || mHasRenderedAd) {
+            return;
+          }
           Log.d(
             TAG,
             "渲染成功: requestId=" + mRequestId +
@@ -295,7 +317,12 @@ public class FeedAdView extends RelativeLayout {
           }
           FeedAdView.this.setVisibility(mVisible ? View.VISIBLE : View.INVISIBLE);
           onAdLayout((int) width, (int) height);
-          emitV2Event("presented", null, (int) width, (int) height);
+          emitV2Event("rendered", null, (int) width, (int) height);
+          if (mPendingPresentation && !mHasPresentedAd) {
+            mPendingPresentation = false;
+            mHasPresentedAd = true;
+            emitV2Event("presented", null, (int) width, (int) height);
+          }
         }
       }
     );
@@ -527,6 +554,8 @@ public class FeedAdView extends RelativeLayout {
     Log.d(TAG, "destroy: 释放广告资源");
     mIsAdLoading = false;
     mHasRenderedAd = false;
+    mHasPresentedAd = false;
+    mPendingPresentation = false;
     // 清空广告容器
     final RelativeLayout mExpressContainer = findViewById(R.id.feed_container);
     if (mExpressContainer != null) {

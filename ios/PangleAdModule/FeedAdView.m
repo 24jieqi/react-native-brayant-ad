@@ -16,7 +16,9 @@
 @property (nonatomic, strong) UIView *adContainerView;
 @property (nonatomic, assign) BOOL isAdLoaded;
 @property (nonatomic, assign) BOOL isVisible;
-@property (nonatomic, assign) BOOL didSendLayoutEvent;
+@property (nonatomic, assign) BOOL didSendRenderedEvent;
+@property (nonatomic, assign) BOOL didSendPresentedEvent;
+@property (nonatomic, assign) BOOL pendingPresentation;
 @property(nonatomic, strong) ExpressNativeAd *adController;
 @property(nonatomic, copy) NSString *lastLoadKey;
 @property(nonatomic, copy) NSString *resourceSource;
@@ -47,7 +49,9 @@
 - (void)setupView {
   _isAdLoaded = NO;
   _isVisible = YES;
-  _didSendLayoutEvent = NO;
+  _didSendRenderedEvent = NO;
+  _didSendPresentedEvent = NO;
+  _pendingPresentation = NO;
   _adController = [[ExpressNativeAd alloc] init];
   _adController.delegate = self;
   _resourceSource = @"realtime";
@@ -121,7 +125,9 @@
   [self emitEventWithState:@"loading" error:nil width:0 height:0];
   
   RCTLog(@"[FeedAdView] 开始加载广告, codeid: %@, width: %.0f", _codeid, width);
-  _didSendLayoutEvent = NO;
+  _didSendRenderedEvent = NO;
+  _didSendPresentedEvent = NO;
+  _pendingPresentation = NO;
 
   AdResourceEntry *entry =
       [[AdResourceStore sharedStore] consumeToken:self.preloadToken
@@ -131,6 +137,8 @@
                                           height:0];
   if (entry && [entry.resource isKindOfClass:[ExpressNativeAd class]]) {
     self.resourceSource = @"preloaded";
+    self.adController.delegate = nil;
+    [self.adController removeAd];
     self.adController = (ExpressNativeAd *)entry.resource;
     self.adController.delegate = self;
     [self emitEventWithState:@"loaded" error:nil width:0 height:0];
@@ -138,6 +146,7 @@
     return;
   }
 
+  self.adController.delegate = nil;
   [self.adController removeAd];
   self.adController = [[ExpressNativeAd alloc] init];
   self.adController.delegate = self;
@@ -161,12 +170,10 @@
     self.adController.expressAdView.rootViewController = rootVC;
     [self.adController registerContainerView:_adContainerView];
     
-    // 触发渲染
-    if (![self.adController isAdReady]) {
-      [self emitEventWithState:@"rendering" error:nil width:0 height:0];
-      [self.adController.expressAdView render];
+    if ([self.adController isAdReady]) {
+      [self expressAdDidRender];
     } else {
-      [self expressAdDidShow];
+      [self emitEventWithState:@"rendering" error:nil width:0 height:0];
     }
   }
 }
@@ -199,14 +206,14 @@
   [self emitEventWithState:@"terminal" error:nil width:0 height:0];
 }
 
-- (void)expressAdDidShow {
-  RCTLog(@"[FeedAdView] 广告展示");
-  if (self.didSendLayoutEvent) {
+- (void)expressAdDidRender {
+  RCTLog(@"[FeedAdView] 广告渲染完成");
+  if (self.didSendRenderedEvent) {
     return;
   }
 
   dispatch_async(dispatch_get_main_queue(), ^{
-    if (self.didSendLayoutEvent) {
+    if (self.didSendRenderedEvent) {
       return;
     }
 
@@ -218,17 +225,42 @@
       return;
     }
 
-    self.didSendLayoutEvent = YES;
+    self.didSendRenderedEvent = YES;
     if (self.onAdLayout) {
       self.onAdLayout(@{
         @"width" : @(width),
         @"height" : @(height),
       });
     }
-    [self emitEventWithState:@"presented"
+    [self emitEventWithState:@"rendered"
                        error:nil
                        width:width
                       height:height];
+    if (self.pendingPresentation) {
+      self.pendingPresentation = NO;
+      [self expressAdDidShow];
+    }
+  });
+}
+
+- (void)expressAdDidShow {
+  RCTLog(@"[FeedAdView] 广告开始展示");
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (self.didSendPresentedEvent) {
+      return;
+    }
+    if (!self.didSendRenderedEvent) {
+      self.pendingPresentation = YES;
+      [self expressAdDidRender];
+      return;
+    }
+
+    self.didSendPresentedEvent = YES;
+    CGSize adSize = self.adController.expressAdView.bounds.size;
+    [self emitEventWithState:@"presented"
+                       error:nil
+                       width:adSize.width
+                      height:adSize.height];
   });
 }
 

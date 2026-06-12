@@ -7,6 +7,7 @@ export type AdLifecycleState =
   | 'loading'
   | 'loaded'
   | 'rendering'
+  | 'rendered'
   | 'presented'
   | 'terminal';
 

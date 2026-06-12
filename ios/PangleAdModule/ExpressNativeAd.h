@@ -14,6 +14,7 @@ NS_ASSUME_NONNULL_BEGIN
 @optional
 - (void)expressAdDidLoad;
 - (void)expressAdDidFailWithError:(NSError *)error;
+- (void)expressAdDidRender;
 - (void)expressAdDidShow;
 - (void)expressAdDidClick;
 - (void)expressAdDidClose;

@@ -43,6 +43,7 @@ describe('广告生命周期', () => {
     expect(lifecycle.transition('rendering')).toBe(false);
     expect(lifecycle.transition('loaded')).toBe(true);
     expect(lifecycle.transition('rendering')).toBe(true);
+    expect(lifecycle.transition('rendered')).toBe(true);
     expect(lifecycle.transition('presented')).toBe(true);
     expect(lifecycle.finish('closed')).toBe(true);
     expect(lifecycle.finish('failed')).toBe(false);
@@ -102,6 +103,13 @@ describe('候选广告位', () => {
   });
 
   it('成功、点击或最后一个广告位不触发回退', () => {
+    expect(
+      shouldTryNextCandidate({
+        candidateIndex: 0,
+        event: { ...failedEvent, state: 'rendered', error: undefined },
+        slotCount: 2,
+      })
+    ).toBe(false);
     expect(
       shouldTryNextCandidate({
         candidateIndex: 0,
