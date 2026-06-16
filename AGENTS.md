@@ -258,3 +258,74 @@ iOS 日志通过 Xcode 控制台查看。
 - 新增原生视图组件：先看 `FeedAd.tsx`、`DrawFeedAd.tsx`、`BannerAd.tsx`，保留 `requireNativeComponent` 和 `LINKING_ERROR` 结构。
 - 修改公共导出：同步检查 `src/index.tsx`、类型声明生成结果和测试。
 - 修改示例：确认示例代码仍能覆盖新增或变更的公开能力。
+
+## 11. Core 模块（src/core/）— v2 API 架构
+
+v1.1.7 引入的核心抽象层，与 `src/dy/api/` 是并列的两套 API 体系。核心文件及职责：
+
+| 文件 | 职责 | 关键类型 |
+|------|------|----------|
+| `types.ts` | 核心类型定义（无业务逻辑） | `AdRequest`, `AdEvent`, `AdPreloadToken`, `InlineAdProps` |
+| `request.ts` | 广告请求工厂 | `createAdRequest()` — 生成 AdRequest |
+| `native.ts` | 原生模块桥接层 | `getNativeAdV2Module()` — iOS → PangleAdModule, Android → AdManager |
+| `sdk.ts` | 初始化 | `initializeAdSdk()` — 防重复初始化保护 |
+| `preload.ts` | 预加载管理 | `preloadFeedAd()`, `preloadBannerAd()`, `preloadSplashAdV2()` — 带令牌缓存和去重 |
+| `splash.ts` | 开屏展示控制器 | `showSplashAd()` — 单请求互斥, 事件订阅, 超时控制 |
+| `candidates.ts` | 候选广告位切换逻辑 | `resolveAdSlotIds()`, `shouldTryNextCandidate()` |
+| `state-machine.ts` | 广告生命周期状态机 | `AdLifecycle`, `FullscreenSettlement` |
+
+关键规则：
+
+- v2 组件（`src/component/`）依赖 core 模块，不依赖 `src/dy/api/`
+- `preload.ts` 内部维护 `preloadTasks` 和 `preloadedTokens` 两个 Map，调用方无需自己管理，但要注意 `resetPreloadTokensForTests()` 在测试中使用
+- `native.ts` 是唯一直接调用原生模块的地方，iOS 走 `PangleAdModule`，Android 走 `AdManager`
+
+## 12. 原生模块位置
+
+### iOS（`ios/PangleAdModule/`）
+
+所有 iOS 广告能力通过 `PangleAdModule` 统一承接。每个广告类型对应一对 `.h`/`.m` 文件：
+
+| 文件 | 广告类型 | 原生组件 |
+|------|----------|----------|
+| `PangleAdModule.m` | 初始化 + 插屏/激励/全屏公共入口 | — |
+| `SplashAd.m` | 开屏 | — |
+| `BannerAd.m` + `BrayantBannerAdView.m` | Banner | `BrayantBannerAdView` |
+| `FeedAdView.m` / `ExpressNativeAd.m` | Feed | `FeedAdView` |
+| `InterstitialAd.m` | 插屏 | — |
+| `BrayantBannerAdViewManager.m` / `FeedAdViewManager.m` | 原生组件管理器 | — |
+| `PAGSDKService.m` | SDK 服务 | — |
+| `AdResourceStore.m` | 资源缓存 | — |
+| `ATTPermissionService.m` | ATT 权限 | — |
+
+### Android（`android/src/main/java/com/brayantad/`）
+
+按广告类型分包：
+
+| 包路径 | 内容 |
+|--------|------|
+| `dy/banner/` | Banner 原生组件 + ViewManager |
+| `dy/drawFeed/` | Draw 信息流（仅 Android） |
+| `dy/feedAd/` | Feed 信息流原生组件 |
+| `dy/fullScreen/` | 全屏视频 + Activity |
+| `dy/rewardVideo/` | 激励视频 + Activity |
+| `dy/splash/` | 开屏 + Activity |
+| `dy/service/` | CSJ 开屏广告服务 |
+| `core/` | AdResourcePool 资源池 |
+| `utils/` | 工具类（DislikeDialog, Utils, TToast 等） |
+
+根级文件：
+- `AdManager.java` — Android 广告管理器主入口
+- `BrayantAdModule.java` — RN 桥接模块
+- `BrayantAdPackage.java` — RN 包注册
+- `WeakHandler.java` — 弱引用 Handler 工具（根级 + dy 级各一份）
+
+## 13. CI/CD 及代码质量管理
+
+- **CI**：`.github/workflows/ci.yml` — lint / test / build-library / build-android / build-ios
+- **Lint**：ESLint（`@react-native/eslint-config` + Prettier），lefthook pre-commit 钩子
+- **Commit**：commitlint（conventional-changelog），lefthook commit-msg 钩子
+- **TypeScript**：`tsc --noEmit` 验证（tsc strict mode）
+- **构建**：`react-native-builder-bob` 生成 `lib/`（commonjs + module + typescript）
+- **发布**：release-it + conventional-changelog → `pnpm release`
+- **Monorepo**：turbo （`turbo.json`） + pnpm workspace
