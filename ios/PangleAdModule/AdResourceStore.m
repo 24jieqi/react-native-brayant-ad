@@ -2,6 +2,8 @@
 #import "BannerAd.h"
 #import "ExpressNativeAd.h"
 #import "SplashAd.h"
+#import "InterstitialAd.h"
+#import "RewardedAd.h"
 #import <math.h>
 
 @implementation AdResourceEntry
@@ -22,6 +24,10 @@
     [(ExpressNativeAd *)resource removeAd];
   } else if ([resource isKindOfClass:[SplashAd class]]) {
     [(SplashAd *)resource removeAd];
+  } else if ([resource isKindOfClass:[InterstitialAd class]]) {
+    [(InterstitialAd *)resource removeAd];
+  } else if ([resource isKindOfClass:[RewardedAd class]]) {
+    [(RewardedAd *)resource removeAd];
   }
 }
 

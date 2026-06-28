@@ -24,13 +24,18 @@ import { createAdRequest } from './core/request';
 import {
   preloadBannerAd,
   preloadFeedAd,
+  preloadInterstitialAd,
+  preloadRewardedAd,
   preloadSplashAdV2 as preloadSplashAd,
 } from './core/preload';
 import { initializeAdSdk } from './core/sdk';
 import { showSplashAd } from './core/splash';
+import { showRewardedAd } from './core/rewarded';
+import { showInterstitialAd } from './core/interstitial';
 import type {
   AdError,
   AdEvent,
+  AdEventAction,
   AdFormat,
   AdLifecycleState,
   AdPreloadToken,
@@ -40,7 +45,14 @@ import type {
   AdSize,
   AdTerminalStatus,
   FullscreenAdResult,
+  FullscreenAdParams,
   InlineAdProps,
+  InterstitialAdRequest,
+  InterstitialAdResult,
+  RewardedAdOptions,
+  RewardedAdRequest,
+  RewardedAdResult,
+  RewardVerification,
 } from './core/types';
 const LINKING_ERROR =
   `The package 'react-native-brayant-ad' doesn't seem to be linked. Make sure: \n\n` +
@@ -80,8 +92,12 @@ export {
   createAdRequest,
   preloadFeedAd,
   preloadBannerAd,
+  preloadRewardedAd,
+  preloadInterstitialAd,
   preloadSplashAd,
   showSplashAd,
+  showRewardedAd,
+  showInterstitialAd,
   FeedAd,
   BannerAd,
 };
@@ -101,6 +117,7 @@ export const legacy = {
 export type {
   AdError,
   AdEvent,
+  AdEventAction,
   AdFormat,
   AdLifecycleState,
   AdPreloadToken,
@@ -110,5 +127,12 @@ export type {
   AdSize,
   AdTerminalStatus,
   FullscreenAdResult,
+  FullscreenAdParams,
   InlineAdProps,
+  InterstitialAdRequest,
+  InterstitialAdResult,
+  RewardedAdOptions,
+  RewardedAdRequest,
+  RewardedAdResult,
+  RewardVerification,
 };

@@ -17,9 +17,9 @@
 | Feed 信息流 | `createAdRequest` + `preloadFeedAd` + `FeedAd` | 支持 | 支持 | 推荐使用 v2 组件 |
 | Banner | `createAdRequest` + `preloadBannerAd` + `BannerAd` | 支持 | 支持 | 推荐使用 v2 组件 |
 | 开屏广告 | `createAdRequest` + `preloadSplashAd` + `showSplashAd` | 支持 | 支持 | v2 推荐，返回统一展示结果 |
-| 激励视频 | `startRewardVideo` | 支持 | 兼容实现 | iOS 当前复用插屏链路 |
-| 全屏视频 | `startFullScreenVideo` | 支持 | 兼容实现 | iOS 当前复用插屏链路 |
-| 插屏广告 | `startInterstitialAd` | 支持 | 支持 | Android 当前复用全屏视频通道 |
+| 激励视频 | `preloadRewardedAd` + `showRewardedAd` | 支持 | 支持 | v2 推荐，支持奖励校验 |
+| 新插屏 | `preloadInterstitialAd` + `showInterstitialAd` | 支持 | 支持 | v2 推荐，支持全屏/半屏代码位 |
+| legacy 全屏 API | `startRewardVideo` / `startFullScreenVideo` / `startInterstitialAd` | 支持 | 支持 | 兼容适配层，新接入请使用 v2 |
 | Draw 信息流 | `loadDrawFeedAd` + `DrawFeedView` | 支持 | 不支持 | Android 独占能力 |
 | legacy 组件 | `FeedAdView` / `BannerAdView` | 支持 | 支持 | 旧版组件仍导出，建议新接入使用 v2 |
 
@@ -231,7 +231,7 @@ const request = createAdRequest({
 
 ### 3. 预加载令牌
 
-`preloadFeedAd`、`preloadBannerAd`、`preloadSplashAd` 会返回 `AdPreloadToken`。组件或 `showSplashAd` 会优先消费同规格令牌。
+所有 `preload*` 方法都会返回 `AdPreloadToken`。组件或对应的 `show*` 方法会优先消费同规格令牌。
 
 ```tsx
 const token = await preloadBannerAd(request);
@@ -424,79 +424,138 @@ interface FullscreenAdResult {
 注意：
 
 - `showSplashAd` 同一时间只允许一个开屏请求执行。
-- 如果已有开屏正在执行，后续请求会返回 `status: 'cancelled'`，错误码为 `SPLASH_BUSY`。
+- 如果已有全屏广告正在执行，后续请求会返回 `status: 'cancelled'`，错误码为 `FULLSCREEN_BUSY`。
 - `request.format` 不是 `splash` 时会抛出错误。
 
-## 命令式广告：激励、全屏、插屏
+## 激励视频（v2 推荐）
 
-激励视频、全屏视频、插屏广告目前仍使用 legacy 命令式 API。调用后会得到一个广告实例，包含：
-
-| 字段 | 说明 |
-| --- | --- |
-| `result` | 原生展示 Promise |
-| `subscribe(type, callback)` | 订阅事件 |
-| `cleanup()` | 移除当前实例注册的监听 |
-
-使用完成后必须调用 `cleanup()`。
+激励视频支持预加载和即时加载。调用 `showRewardedAd` 时如果存在同规格的预加载令牌会自动消费；没有令牌或令牌已过期时会实时加载。
 
 ```tsx
-import { startRewardVideo } from '@24jieqi/react-native-brayant-ad';
+import {
+  createAdRequest,
+  preloadRewardedAd,
+  showRewardedAd,
+} from '@24jieqi/react-native-brayant-ad';
 
-const reward = startRewardVideo({
-  codeid: '你的激励视频广告位',
+const request = createAdRequest({
+  format: 'rewarded',
+  slotIds: ['主激励代码位', '备用激励代码位'],
+  scene: 'daily-check-in',
+  reward: {
+    userId: 'user-123',
+    rewardName: '金币',
+    rewardAmount: 100,
+    extra: JSON.stringify({ orderId: 'reward-order-001' }),
+  },
 });
 
-reward.subscribe('onAdLoaded', () => {
-  console.log('激励视频加载成功');
+// 可选。建议在用户进入可能触发广告的页面时预加载。
+await preloadRewardedAd(request);
+
+const result = await showRewardedAd({
+  request,
+  loadTimeoutMs: 10_000,
+  onEvent: (event) => {
+    console.log('Rewarded event', event.state, event.action, event);
+  },
 });
 
-reward.subscribe('onAdClose', () => {
-  console.log('激励视频关闭');
-});
-
-reward.subscribe('onAdError', (error) => {
-  console.log('激励视频失败', error);
-});
-
-try {
-  await reward.result;
-} finally {
-  reward.cleanup();
+if (result.reward?.valid) {
+  // 只在奖励校验有效时发奖。
+  console.log('发放奖励', result.reward.name, result.reward.amount);
+} else {
+  console.log('未获得奖励', result.status, result.reward?.error);
 }
 ```
 
-全屏视频：
+`reward` 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `userId` | `string` | 服务端校验时必填 | 穿山甲服务端回调使用的用户标识 |
+| `rewardName` | `string` | 否 | 广告内展示的奖励名称；接口值优先于平台配置 |
+| `rewardAmount` | `number` | 否 | 正整数，广告内展示的奖励数量 |
+| `extra` | `string` | 否 | JSON 对象序列化字符串，用于服务端回调透传 |
+
+客户端校验和服务端校验最终都会通过 `result.reward.valid` 返回。使用服务端校验时，需要在穿山甲平台配置回调 URL，并保证 `userId` 非空。SDK 只负责透传参数和结果，不会调用业务发奖接口。
+
+> 不要根据 `videoCompleted`、`status === 'closed'` 或关闭事件直接发奖。视频播放完成、广告关闭与奖励验证是三个不同状态，必须以 `result.reward?.valid === true` 为准。
+
+## 新插屏（v2 推荐）
+
+穿山甲的新插屏在 Android 使用 `loadFullScreenVideoAd`，在 iOS 使用 `BUNativeExpressFullscreenVideoAd`。全屏、半屏或优选样式由穿山甲平台上的代码位配置决定。
 
 ```tsx
-import { startFullScreenVideo } from '@24jieqi/react-native-brayant-ad';
+import {
+  createAdRequest,
+  preloadInterstitialAd,
+  showInterstitialAd,
+} from '@24jieqi/react-native-brayant-ad';
 
-const fullScreen = startFullScreenVideo({
-  codeid: '你的全屏视频广告位',
-  orientation: 'VERTICAL',
-  provider: '头条',
+const request = createAdRequest({
+  format: 'interstitial',
+  slotIds: ['主新插屏代码位', '备用新插屏代码位'],
+  scene: 'level-complete',
 });
+
+await preloadInterstitialAd(request);
+
+const result = await showInterstitialAd({
+  request,
+  loadTimeoutMs: 10_000,
+  onEvent: (event) => {
+    console.log('Interstitial event', event);
+  },
+});
+
+if (result.status === 'failed') {
+  console.log(result.error?.code, result.error?.message);
+}
 ```
 
-插屏广告：
+新插屏应在页面切换、关卡结束、视频暂停等自然中断点展示，不应在用户操作过程中突然弹出。
 
-```tsx
-import { startInterstitialAd } from '@24jieqi/react-native-brayant-ad';
+### 全屏广告事件
 
-const interstitial = startInterstitialAd({
-  codeid: '你的插屏广告位',
-  orientation: 'VERTICAL',
-  provider: '头条',
-});
-```
-
-支持事件：
-
-| 事件 | 说明 |
+| `state` / `action` | 说明 |
 | --- | --- |
-| `onAdLoaded` | 广告加载成功 |
-| `onAdError` | 广告加载或展示失败 |
-| `onAdClick` | 用户点击广告 |
-| `onAdClose` | 广告关闭 |
+| `state: 'loading'` | 开始实时加载 |
+| `state: 'loaded'` | 素材已缓存，可以流畅展示 |
+| `state: 'presented'` | 广告已经展示 |
+| `action: 'click'` | 用户点击广告 |
+| `action: 'skip'` | 用户跳过视频 |
+| `action: 'video-complete'` | 视频素材播放完成，不代表奖励有效 |
+| `action: 'reward'` | 收到激励校验结果，`event.reward` 包含详情 |
+| `state: 'terminal'` | 本次请求已经结束 |
+
+展示结果的 `status` 为 `closed`、`skipped`、`failed` 或 `cancelled`。常用稳定错误码：
+
+| 错误码 | 说明 |
+| --- | --- |
+| `FULLSCREEN_BUSY` | 已有开屏、激励或插屏正在执行 |
+| `SDK_NOT_INITIALIZED` | Android 广告 SDK 尚未初始化 |
+| `ACTIVITY_UNAVAILABLE` / `VIEW_CONTROLLER_UNAVAILABLE` | 当前没有可展示广告的页面 |
+| `AD_LOAD_TIMEOUT` | 单个广告位在 `loadTimeoutMs` 内未完成素材加载 |
+| `AD_LOAD_FAILED` | 穿山甲返回加载失败或无填充 |
+| `AD_SHOW_FAILED` | 广告素材加载成功但展示失败 |
+| `AD_PLAYBACK_FAILED` | 视频播放阶段失败 |
+| `REWARD_INVALID` | 激励奖励校验未通过 |
+
+`slotIds` 会按顺序尝试。只有展示前加载失败或超时才会切换到下一个广告位；广告一旦展示，即使之后播放失败也不会再弹出备用广告。开屏、激励视频和新插屏共用全屏互斥，同一时间只能执行一个请求。
+
+## 从 legacy 全屏 API 迁移
+
+旧 API 仍然可用，但新代码应迁移到 v2：
+
+| legacy | v2 |
+| --- | --- |
+| `startRewardVideo({ codeid })` | `createAdRequest({ format: 'rewarded' })` + `showRewardedAd` |
+| `startInterstitialAd({ codeid })` | `createAdRequest({ format: 'interstitial' })` + `showInterstitialAd` |
+| `startFullScreenVideo({ codeid })` | `showInterstitialAd`，穿山甲已将原全屏视频合并为新插屏 |
+| `subscribe(...)` + `cleanup()` | `onEvent`，Promise 完成后自动移除原生监听 |
+
+legacy 调用仍返回 `{ result, subscribe, cleanup }`，并通过统一 v2 控制器执行；已有业务可以渐进迁移。
 
 ## Draw 信息流（Android）
 
@@ -661,7 +720,11 @@ export {
   preloadFeedAd,
   preloadBannerAd,
   preloadSplashAd,
+  preloadRewardedAd,
+  preloadInterstitialAd,
   showSplashAd,
+  showRewardedAd,
+  showInterstitialAd,
   FeedAd,
   BannerAd,
   requestPermission,
@@ -688,6 +751,7 @@ export {
 export type {
   AdError,
   AdEvent,
+  AdEventAction,
   AdFormat,
   AdLifecycleState,
   AdPreloadToken,
@@ -697,7 +761,14 @@ export type {
   AdSize,
   AdTerminalStatus,
   FullscreenAdResult,
+  FullscreenAdParams,
   InlineAdProps,
+  InterstitialAdRequest,
+  InterstitialAdResult,
+  RewardedAdOptions,
+  RewardedAdRequest,
+  RewardedAdResult,
+  RewardVerification,
 };
 ```
 
@@ -707,9 +778,9 @@ export type {
 2. 在业务确认隐私授权后调用 `initializeAdSdk({ allowInitialization: true })`。
 3. 调用 `requestPermission()` 处理广告 SDK 权限或 ATT。
 4. 使用 `createAdRequest` 为每个广告场景创建请求。
-5. 对 Feed、Banner、Splash 优先调用对应 `preload*` 方法。
-6. 使用 `FeedAd`、`BannerAd` 或 `showSplashAd` 消费预加载令牌。
-7. 对激励、全屏、插屏这类命令式广告，在 `finally` 中调用 `cleanup()`。
+5. 对 Feed、Banner、Splash、激励和新插屏按场景调用对应 `preload*` 方法。
+6. 使用组件或 `show*` 方法消费预加载令牌；不预加载时会实时请求。
+7. 激励视频只依据 `result.reward.valid` 发奖，并记录失败或无效结果。
 
 ## 常见问题
 
@@ -749,11 +820,23 @@ await legacy.preloadFeedAd({ codeid: 'id', adWidth: 375 });
 
 ### 什么时候需要手动传 `preloadToken`？
 
-如果你希望明确控制某次渲染使用哪次预加载结果，可以把 `preload*` 返回的 token 传给组件或 `showSplashAd`。如果不传，v2 会自动领取同规格的未消费令牌。
+如果你希望明确控制某次展示使用哪次预加载结果，可以把 `preload*` 返回的 token 传给组件或 `show*`。如果不传，v2 会自动领取同规格的未消费令牌。
 
-### iOS 上激励视频为什么看起来像插屏？
+### 激励视频关闭了，为什么没有奖励？
 
-当前 iOS 的 `startRewardVideo` 和 `startFullScreenVideo` 复用 `PangleAdModule` 的插屏加载和展示链路。这是兼容实现，不等同于完整激励视频能力。
+关闭、播放完成和奖励校验互相独立。只有 `result.reward?.valid === true` 才表示穿山甲确认本次奖励有效；用户跳过、服务端验证失败或未达到奖励条件时都不应发奖。
+
+### 为什么返回 `FULLSCREEN_BUSY`？
+
+开屏、激励和新插屏都需要占用系统全屏展示能力。已有请求未结束时，新请求会返回 `status: 'cancelled'` 和 `FULLSCREEN_BUSY`，业务应等待当前广告结束后再触发。
+
+### 为什么返回 `AD_LOAD_FAILED` 或一直没有填充？
+
+确认代码位类型与 API 匹配：激励代码位只能用于 `rewarded`，穿山甲“新插屏”代码位用于 `interstitial`。同时检查 App ID、包名、测试设备、代码位生效状态和网络；原生错误码会保留在 `error.nativeCode`。
+
+### 为什么返回页面不可用？
+
+广告必须在 React Native 页面已经挂载且 App 处于前台时展示。Android 没有当前 Activity 时返回 `ACTIVITY_UNAVAILABLE`，iOS 找不到可展示控制器时返回 `VIEW_CONTROLLER_UNAVAILABLE`。
 
 ### Draw 信息流能在 iOS 使用吗？
 

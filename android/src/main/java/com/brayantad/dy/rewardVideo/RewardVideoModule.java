@@ -37,7 +37,9 @@ public class RewardVideoModule extends ReactContextBaseJavaModule {
   public void startAd(ReadableMap options, final Promise promise) {
     //拿到参数
     String codeId = options.getString("codeid");
-    String provider = options.getString("provider");
+    String provider = options.hasKey("provider")
+      ? options.getString("provider")
+      : "头条";
     Log.d(TAG, "startAd:codeId: " + codeId + provider);
     //准备激励回调
     DyADCore.prepareReward(promise, mContext);

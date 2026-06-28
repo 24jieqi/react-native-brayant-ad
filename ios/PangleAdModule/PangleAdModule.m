@@ -10,6 +10,7 @@
 #import "ExpressNativeAd.h"
 #import "InterstitialAd.h"
 #import "PAGSDKService.h"
+#import "RewardedAd.h"
 #import "SplashAd.h"
 #import <React/RCTLog.h>
 #import <React/RCTUIManager.h>
@@ -51,6 +52,7 @@ NSString *const PangleFeedAdLayout = @"PangleFeedAdLayout";
 @property(nonatomic, strong) SplashAd *splashAd;
 @property(nonatomic, strong) BannerAd *legacyBannerAd;
 @property(nonatomic, strong) ExpressNativeAd *legacyExpressNativeAd;
+@property(nonatomic, copy, nullable) NSString *activeFullscreenRequestId;
 - (NSDictionary *)tokenPayload:(AdResourceEntry *)entry;
 - (void)emitV2EventForRequest:(NSString *)requestId
                        format:(NSString *)format
@@ -275,6 +277,55 @@ RCT_EXPORT_METHOD(preloadAd : (NSDictionary *)request resolver : (
     return;
   }
 
+  if ([format isEqualToString:@"rewarded"]) {
+    NSDictionary *reward = request[@"reward"];
+    RewardedAd *ad = [[RewardedAd alloc] init];
+    [ad loadAdWithSlotID:slotId
+                  userId:reward[@"userId"]
+              rewardName:reward[@"rewardName"]
+            rewardAmount:reward[@"rewardAmount"]
+                   extra:reward[@"extra"]
+              completion:^(BOOL success, NSError *_Nullable error) {
+                if (!success) {
+                  reject(@"PRELOAD_FAILED",
+                         error.localizedDescription ?: @"激励视频预加载失败",
+                         error);
+                  return;
+                }
+                AdResourceEntry *entry =
+                    [[AdResourceStore sharedStore] storeResource:ad
+                                                      requestId:requestId
+                                                         format:format
+                                                         slotId:slotId
+                                                          width:0
+                                                         height:0];
+                resolve([self tokenPayload:entry]);
+              }];
+    return;
+  }
+
+  if ([format isEqualToString:@"interstitial"]) {
+    InterstitialAd *ad = [[InterstitialAd alloc] init];
+    [ad loadAdWithSlotID:slotId
+              completion:^(BOOL success, NSError *_Nullable error) {
+                if (!success) {
+                  reject(@"PRELOAD_FAILED",
+                         error.localizedDescription ?: @"插屏广告预加载失败",
+                         error);
+                  return;
+                }
+                AdResourceEntry *entry =
+                    [[AdResourceStore sharedStore] storeResource:ad
+                                                      requestId:requestId
+                                                         format:format
+                                                         slotId:slotId
+                                                          width:0
+                                                         height:0];
+                resolve([self tokenPayload:entry]);
+              }];
+    return;
+  }
+
   reject(@"UNSUPPORTED_FORMAT", format, nil);
 }
 
@@ -369,6 +420,276 @@ RCT_EXPORT_METHOD(showSplashAdV2 : (NSDictionary *)params resolver : (
         if (!settled) {
           [activeAd removeAd];
           finish(@"skipped", nil);
+        }
+      });
+}
+
+RCT_EXPORT_METHOD(showFullscreenAdV2 : (NSDictionary *)params resolver : (
+    RCTPromiseResolveBlock)resolve rejecter : (RCTPromiseRejectBlock)reject) {
+  NSDictionary *request = params[@"request"];
+  NSString *requestId = request[@"requestId"];
+  NSString *format = request[@"format"];
+  NSArray<NSString *> *slotIds = request[@"slotIds"];
+  NSString *slotId = slotIds.firstObject;
+  NSDictionary *tokenPayload = params[@"preloadToken"];
+  NSString *token = tokenPayload[@"token"];
+  NSTimeInterval loadTimeoutMs = [params[@"loadTimeoutMs"] doubleValue];
+  UIViewController *rootVC = [self rootViewController];
+
+  if (!requestId || !slotId ||
+      (!([format isEqualToString:@"rewarded"] ||
+         [format isEqualToString:@"interstitial"]))) {
+    reject(@"INVALID_REQUEST", @"全屏广告请求无效", nil);
+    return;
+  }
+
+  NSDictionary *(^errorPayload)(NSString *, NSString *, NSError *, NSString *) =
+      ^NSDictionary *(NSString *code, NSString *message, NSError *nativeError,
+                      NSString *stage) {
+        NSMutableDictionary *payload = [@{
+          @"code" : code,
+          @"message" : message ?: code,
+        } mutableCopy];
+        if (nativeError) payload[@"nativeCode"] = @(nativeError.code);
+        if (stage) payload[@"stage"] = stage;
+        return payload;
+      };
+
+  if (!rootVC) {
+    resolve(@{
+      @"requestId" : requestId,
+      @"slotId" : slotId,
+      @"status" : @"failed",
+      @"elapsedMs" : @0,
+      @"presented" : @NO,
+      @"videoCompleted" : @NO,
+      @"error" : errorPayload(@"VIEW_CONTROLLER_UNAVAILABLE",
+                               @"当前视图控制器不可用", nil, @"show"),
+    });
+    return;
+  }
+
+  @synchronized(self) {
+    if (self.activeFullscreenRequestId) {
+      resolve(@{
+        @"requestId" : requestId,
+        @"slotId" : slotId,
+        @"status" : @"cancelled",
+        @"elapsedMs" : @0,
+        @"presented" : @NO,
+        @"videoCompleted" : @NO,
+        @"error" : errorPayload(@"FULLSCREEN_BUSY",
+                                 @"已有全屏广告正在展示", nil, nil),
+      });
+      return;
+    }
+    self.activeFullscreenRequestId = requestId;
+  }
+
+  NSTimeInterval startedAt = [NSDate date].timeIntervalSince1970;
+  AdResourceEntry *entry =
+      [[AdResourceStore sharedStore] consumeToken:token
+                                          format:format
+                                          slotId:slotId
+                                           width:0
+                                          height:0];
+  NSString *source = entry ? @"preloaded" : @"realtime";
+  __block BOOL settled = NO;
+  __block BOOL loadFinished = entry != nil;
+  __block BOOL presented = NO;
+  __block BOOL videoCompleted = NO;
+  __block BOOL skipped = NO;
+  __block NSDictionary *rewardPayload = nil;
+
+  void (^emit)(NSString *, NSString *, NSDictionary *, NSDictionary *) =
+      ^(NSString *state, NSString *action, NSDictionary *error,
+        NSDictionary *reward) {
+        if (!self.hasListeners) return;
+        NSTimeInterval elapsed =
+            ([NSDate date].timeIntervalSince1970 - startedAt) * 1000;
+        NSMutableDictionary *payload = [@{
+          @"requestId" : requestId,
+          @"format" : format,
+          @"slotId" : slotId,
+          @"state" : state,
+          @"source" : source,
+          @"elapsedMs" : @(elapsed),
+        } mutableCopy];
+        if (action) payload[@"action"] = action;
+        if (error) payload[@"error"] = error;
+        if (reward) payload[@"reward"] = reward;
+        [self sendEventWithName:@"BrayantAd-onEvent" body:payload];
+      };
+
+  void (^finish)(NSString *, NSDictionary *) =
+      ^(NSString *status, NSDictionary *error) {
+        @synchronized(self) {
+          if (settled) return;
+          settled = YES;
+          if ([self.activeFullscreenRequestId isEqualToString:requestId]) {
+            self.activeFullscreenRequestId = nil;
+          }
+        }
+        emit(@"terminal", nil, error, nil);
+        NSTimeInterval elapsed =
+            ([NSDate date].timeIntervalSince1970 - startedAt) * 1000;
+        NSMutableDictionary *result = [@{
+          @"requestId" : requestId,
+          @"slotId" : slotId,
+          @"status" : status,
+          @"elapsedMs" : @(elapsed),
+          @"presented" : @(presented),
+          @"videoCompleted" : @(videoCompleted),
+        } mutableCopy];
+        if (error) result[@"error"] = error;
+        if (rewardPayload) result[@"reward"] = rewardPayload;
+        resolve(result);
+      };
+
+  void (^showRewarded)(RewardedAd *) = ^(RewardedAd *ad) {
+    ad.eventHandler = ^(NSString *event, NSError *error) {
+      if ([event isEqualToString:@"presented"]) {
+        presented = YES;
+        emit(@"presented", nil, nil, nil);
+      } else if ([event isEqualToString:@"click"]) {
+        emit(@"presented", @"click", nil, nil);
+      } else if ([event isEqualToString:@"skip"]) {
+        skipped = YES;
+        emit(@"presented", @"skip", nil, nil);
+      } else if ([event isEqualToString:@"video-complete"]) {
+        videoCompleted = YES;
+        emit(@"presented", @"video-complete", nil, nil);
+      } else if ([event isEqualToString:@"playback-failed"] ||
+                 [event isEqualToString:@"failed"]) {
+        finish(@"failed",
+               errorPayload(@"AD_PLAYBACK_FAILED",
+                            error.localizedDescription ?: @"激励视频播放失败",
+                            error, @"playback"));
+      }
+    };
+    ad.verificationHandler =
+        ^(BOOL valid, NSDictionary *reward, NSError *error) {
+          NSMutableDictionary *normalized = [reward mutableCopy];
+          if (error || !valid) {
+            normalized[@"error"] = errorPayload(
+                @"REWARD_INVALID",
+                error.localizedDescription ?: @"奖励校验未通过", error,
+                @"playback");
+          }
+          rewardPayload = normalized;
+          emit(@"presented", @"reward", nil, normalized);
+        };
+    [ad showAdInRootViewController:rootVC
+                        completion:^(BOOL completed, NSError *error) {
+                          if (!completed || error) {
+                            finish(@"failed",
+                                   errorPayload(
+                                       @"AD_SHOW_FAILED",
+                                       error.localizedDescription ?:
+                                           @"激励视频展示失败",
+                                       error, @"show"));
+                            return;
+                          }
+                          finish(skipped ? @"skipped" : @"closed", nil);
+                        }];
+  };
+
+  void (^showInterstitial)(InterstitialAd *) = ^(InterstitialAd *ad) {
+    ad.eventHandler = ^(NSString *event, NSError *error) {
+      if ([event isEqualToString:@"presented"]) {
+        presented = YES;
+        emit(@"presented", nil, nil, nil);
+      } else if ([event isEqualToString:@"click"]) {
+        emit(@"presented", @"click", nil, nil);
+      } else if ([event isEqualToString:@"skip"]) {
+        skipped = YES;
+        emit(@"presented", @"skip", nil, nil);
+      } else if ([event isEqualToString:@"video-complete"]) {
+        videoCompleted = YES;
+        emit(@"presented", @"video-complete", nil, nil);
+      } else if ([event isEqualToString:@"playback-failed"] ||
+                 [event isEqualToString:@"failed"]) {
+        finish(@"failed",
+               errorPayload(@"AD_PLAYBACK_FAILED",
+                            error.localizedDescription ?: @"插屏广告播放失败",
+                            error, @"playback"));
+      }
+    };
+    [ad showAdInRootViewController:rootVC
+                        onComplete:^(BOOL completed, NSError *error) {
+                          if (!completed || error) {
+                            finish(@"failed",
+                                   errorPayload(
+                                       @"AD_SHOW_FAILED",
+                                       error.localizedDescription ?:
+                                           @"插屏广告展示失败",
+                                       error, @"show"));
+                            return;
+                          }
+                          finish(skipped ? @"skipped" : @"closed", nil);
+                        }];
+  };
+
+  if ([format isEqualToString:@"rewarded"]) {
+    if ([entry.resource isKindOfClass:[RewardedAd class]]) {
+      emit(@"loaded", nil, nil, nil);
+      showRewarded((RewardedAd *)entry.resource);
+    } else {
+      NSDictionary *reward = request[@"reward"];
+      RewardedAd *ad = [[RewardedAd alloc] init];
+      emit(@"loading", nil, nil, nil);
+      [ad loadAdWithSlotID:slotId
+                    userId:reward[@"userId"]
+                rewardName:reward[@"rewardName"]
+              rewardAmount:reward[@"rewardAmount"]
+                     extra:reward[@"extra"]
+                completion:^(BOOL success, NSError *error) {
+                  if (settled) return;
+                  if (!success) {
+                    finish(@"failed",
+                           errorPayload(
+                               @"AD_LOAD_FAILED",
+                               error.localizedDescription ?:
+                                   @"激励视频加载失败",
+                               error, @"load"));
+                    return;
+                  }
+                  loadFinished = YES;
+                  emit(@"loaded", nil, nil, nil);
+                  showRewarded(ad);
+                }];
+    }
+  } else if ([entry.resource isKindOfClass:[InterstitialAd class]]) {
+    emit(@"loaded", nil, nil, nil);
+    showInterstitial((InterstitialAd *)entry.resource);
+  } else {
+    InterstitialAd *ad = [[InterstitialAd alloc] init];
+    emit(@"loading", nil, nil, nil);
+    [ad loadAdWithSlotID:slotId
+              completion:^(BOOL success, NSError *error) {
+                if (settled) return;
+                if (!success) {
+                  finish(@"failed",
+                         errorPayload(@"AD_LOAD_FAILED",
+                                      error.localizedDescription ?:
+                                          @"插屏广告加载失败",
+                                      error, @"load"));
+                  return;
+                }
+                loadFinished = YES;
+                emit(@"loaded", nil, nil, nil);
+                showInterstitial(ad);
+              }];
+  }
+
+  dispatch_after(
+      dispatch_time(DISPATCH_TIME_NOW,
+                    (int64_t)(MAX(loadTimeoutMs, 1) / 1000.0 * NSEC_PER_SEC)),
+      dispatch_get_main_queue(), ^{
+        if (!settled && !loadFinished) {
+          finish(@"failed",
+                 errorPayload(@"AD_LOAD_TIMEOUT", @"广告加载超时", nil,
+                              @"load"));
         }
       });
 }

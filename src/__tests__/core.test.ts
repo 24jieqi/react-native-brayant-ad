@@ -33,6 +33,33 @@ describe('广告请求', () => {
       })
     ).toThrow('广告请求至少需要一个有效广告位');
   });
+
+  it('校验激励参数并拒绝其他广告类型携带奖励配置', () => {
+    expect(() =>
+      createAdRequest({
+        format: 'rewarded',
+        slotIds: ['reward'],
+        scene: 'reward',
+        reward: { rewardAmount: 0 },
+      })
+    ).toThrow('rewardAmount 必须是正整数');
+    expect(() =>
+      createAdRequest({
+        format: 'rewarded',
+        slotIds: ['reward'],
+        scene: 'reward',
+        reward: { extra: '[]' },
+      })
+    ).toThrow('extra 必须是合法的 JSON 对象字符串');
+    expect(() =>
+      createAdRequest({
+        format: 'interstitial',
+        slotIds: ['interstitial'],
+        scene: 'pause',
+        reward: { userId: 'user' },
+      })
+    ).toThrow('reward 参数仅适用于 rewarded 请求');
+  });
 });
 
 describe('广告生命周期', () => {

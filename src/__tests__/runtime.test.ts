@@ -7,6 +7,7 @@ import type {
 const mockInitializeAdSdk = jest.fn();
 const mockPreloadAd = jest.fn();
 const mockShowSplashAdV2 = jest.fn();
+const mockShowFullscreenAdV2 = jest.fn();
 const mockRemoveListener = jest.fn();
 
 jest.mock('../core/native', () => ({
@@ -14,10 +15,12 @@ jest.mock('../core/native', () => ({
     initializeAdSdk: mockInitializeAdSdk,
     preloadAd: mockPreloadAd,
     showSplashAdV2: mockShowSplashAdV2,
+    showFullscreenAdV2: mockShowFullscreenAdV2,
   }),
 }));
 
 jest.mock('react-native', () => ({
+  Platform: { OS: 'android' },
   NativeEventEmitter: class {
     addListener() {
       return { remove: mockRemoveListener };
@@ -29,11 +32,17 @@ import {
   preloadBannerAd,
   claimPreloadToken,
   preloadFeedAd,
+  preloadInterstitialAd,
+  preloadRewardedAd,
   preloadSplashAdV2,
   resetPreloadTokensForTests,
 } from '../core/preload';
 import { resetAdSdkForTests, initializeAdSdk } from '../core/sdk';
 import { showSplashAd } from '../core/splash';
+import { showRewardedAd } from '../core/rewarded';
+import { showInterstitialAd } from '../core/interstitial';
+import { resetFullscreenRequestForTests } from '../core/fullscreen-lock';
+import startRewardVideo from '../dy/api/RewardVideo';
 
 const createRequest = (
   requestId: string,
@@ -209,10 +218,38 @@ describe('预加载令牌', () => {
     });
     expect(claimPreloadToken(baseRequest)).toBeUndefined();
   });
+
+  it('按激励用户和透传参数隔离预加载令牌', async () => {
+    const first = {
+      ...createRequest('reward-1', 'rewarded'),
+      reward: { userId: 'user-a', extra: '{"order":"a"}' },
+    };
+    const second = {
+      ...createRequest('reward-2', 'rewarded'),
+      reward: { userId: 'user-b', extra: '{"order":"b"}' },
+    };
+    mockPreloadAd
+      .mockResolvedValueOnce(createToken(first, 'reward-token-a'))
+      .mockResolvedValueOnce(createToken(second, 'reward-token-b'));
+
+    await preloadRewardedAd(first);
+    await preloadRewardedAd(second);
+
+    expect(mockPreloadAd).toHaveBeenCalledTimes(2);
+    expect(claimPreloadToken(first)?.token).toBe('reward-token-a');
+    expect(claimPreloadToken(second)?.token).toBe('reward-token-b');
+  });
+
+  it('插屏预加载拒绝错误格式', async () => {
+    await expect(
+      preloadInterstitialAd(createRequest('feed-as-interstitial'))
+    ).rejects.toThrow('预加载类型不匹配');
+  });
 });
 
 describe('开屏广告', () => {
   beforeEach(() => {
+    resetFullscreenRequestForTests();
     resetPreloadTokensForTests();
     mockPreloadAd.mockReset();
     mockShowSplashAdV2.mockReset();
@@ -260,7 +297,7 @@ describe('开屏广告', () => {
     ).resolves.toMatchObject({
       requestId: secondRequest.requestId,
       status: 'cancelled',
-      error: { code: 'SPLASH_BUSY' },
+      error: { code: 'FULLSCREEN_BUSY' },
     });
 
     resolveFirst?.({
@@ -338,5 +375,137 @@ describe('开屏广告', () => {
     });
     expect(mockShowSplashAdV2).toHaveBeenCalledTimes(2);
     expect(mockRemoveListener).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('激励视频与新插屏', () => {
+  beforeEach(() => {
+    resetPreloadTokensForTests();
+    resetFullscreenRequestForTests();
+    mockShowFullscreenAdV2.mockReset();
+    mockRemoveListener.mockReset();
+  });
+
+  it('展示前加载失败时按广告位顺序回退', async () => {
+    const request = {
+      ...createRequest('reward-fallback', 'rewarded'),
+      format: 'rewarded' as const,
+      slotIds: ['slot-a', 'slot-b'],
+    };
+    mockShowFullscreenAdV2
+      .mockResolvedValueOnce({
+        requestId: request.requestId,
+        slotId: 'slot-a',
+        status: 'failed',
+        elapsedMs: 10,
+        presented: false,
+        videoCompleted: false,
+      })
+      .mockResolvedValueOnce({
+        requestId: request.requestId,
+        slotId: 'slot-b',
+        status: 'closed',
+        elapsedMs: 20,
+        presented: true,
+        videoCompleted: true,
+        reward: { valid: true, amount: 10 },
+      });
+
+    await expect(showRewardedAd({ request })).resolves.toMatchObject({
+      slotId: 'slot-b',
+      reward: { valid: true },
+    });
+    expect(mockShowFullscreenAdV2).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        request: expect.objectContaining({ slotIds: ['slot-a'] }),
+        loadTimeoutMs: 10000,
+      })
+    );
+    expect(mockShowFullscreenAdV2).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        request: expect.objectContaining({ slotIds: ['slot-b'] }),
+      })
+    );
+  });
+
+  it('广告已经展示后失败时不再回退', async () => {
+    const request = {
+      ...createRequest('interstitial-presented', 'interstitial'),
+      format: 'interstitial' as const,
+      slotIds: ['slot-a', 'slot-b'],
+    };
+    mockShowFullscreenAdV2.mockResolvedValue({
+      requestId: request.requestId,
+      slotId: 'slot-a',
+      status: 'failed',
+      elapsedMs: 10,
+      presented: true,
+      videoCompleted: false,
+    });
+
+    await showInterstitialAd({ request });
+    expect(mockShowFullscreenAdV2).toHaveBeenCalledTimes(1);
+  });
+
+  it('激励展示期间拒绝另一个全屏请求', async () => {
+    const rewardRequest = {
+      ...createRequest('reward-busy', 'rewarded'),
+      format: 'rewarded' as const,
+    };
+    const interstitialRequest = {
+      ...createRequest('interstitial-busy', 'interstitial'),
+      format: 'interstitial' as const,
+    };
+    let resolveReward: ((value: unknown) => void) | undefined;
+    mockShowFullscreenAdV2.mockReturnValue(
+      new Promise((resolve) => {
+        resolveReward = resolve;
+      })
+    );
+
+    const first = showRewardedAd({ request: rewardRequest });
+    await expect(
+      showInterstitialAd({ request: interstitialRequest })
+    ).resolves.toMatchObject({
+      status: 'cancelled',
+      error: { code: 'FULLSCREEN_BUSY' },
+    });
+    expect(mockShowFullscreenAdV2).toHaveBeenCalledTimes(1);
+
+    resolveReward?.({
+      requestId: rewardRequest.requestId,
+      slotId: 'slot-a',
+      status: 'closed',
+      elapsedMs: 20,
+      presented: true,
+      videoCompleted: true,
+    });
+    await first;
+  });
+
+  it('legacy 激励 API 保留 result、subscribe 和 cleanup 外形', async () => {
+    mockShowFullscreenAdV2.mockResolvedValue({
+      requestId: 'legacy',
+      slotId: 'legacy-slot',
+      status: 'closed',
+      elapsedMs: 20,
+      presented: true,
+      videoCompleted: true,
+      reward: { valid: true },
+    });
+
+    const legacyAd = startRewardVideo({ codeid: 'legacy-slot' });
+    expect(legacyAd.subscribe('onAdClose', jest.fn())).toHaveProperty('remove');
+    await expect(legacyAd.result).resolves.toBe(
+      JSON.stringify({
+        video_play: true,
+        ad_click: false,
+        apk_install: false,
+        verify_status: true,
+      })
+    );
+    expect(() => legacyAd.cleanup()).not.toThrow();
   });
 });

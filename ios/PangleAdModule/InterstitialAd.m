@@ -13,6 +13,7 @@
 
 @property(nonatomic, strong) BUNativeExpressFullscreenVideoAd *interstitialAd;
 @property(nonatomic, copy) InterstitialCompletionBlock completeBlock;
+@property(nonatomic, copy) InterstitialLoadCompletionBlock loadCompletion;
 @property(nonatomic, assign) BOOL adLoaded;
 
 @end
@@ -37,27 +38,31 @@
 }
 
 - (void)loadAdWithSlotID:(NSString *)slotID {
+  [self loadAdWithSlotID:slotID completion:nil];
+}
+
+- (void)loadAdWithSlotID:(NSString *)slotID
+              completion:(InterstitialLoadCompletionBlock)completion {
   if (!slotID || slotID.length == 0) {
     NSLog(@"[Pangle] 插屏广告 SlotID 不能为空");
+    if (completion) {
+      NSError *error = [NSError
+          errorWithDomain:@"com.pangle.interstitial"
+                     code:1000
+                 userInfo:@{NSLocalizedDescriptionKey : @"广告位不能为空"}];
+      completion(NO, error);
+    }
     return;
   }
 
   self.adLoaded = NO;
   self.interstitialAd = nil;
-
-  BUSize *imgSize = [[BUSize alloc] init];
-  imgSize.width = 1080;
-  imgSize.height = 1920;
-
-  BUAdSlot *slot = [[BUAdSlot alloc] init];
-  slot.ID = slotID;
-  slot.position = BUAdSlotPositionFullscreen;
-  slot.imgSize = imgSize;
+  self.loadCompletion = completion;
 
   NSLog(@"[Pangle] 开始加载插屏广告, SlotID: %@", slotID);
 
   BUNativeExpressFullscreenVideoAd *fullscreenVideoAd =
-      [[BUNativeExpressFullscreenVideoAd alloc] initWithSlot:slot];
+      [[BUNativeExpressFullscreenVideoAd alloc] initWithSlotID:slotID];
   fullscreenVideoAd.delegate = self;
   self.interstitialAd = fullscreenVideoAd;
 
@@ -104,6 +109,9 @@
 - (void)removeAd {
   self.interstitialAd = nil;
   self.adLoaded = NO;
+  self.loadCompletion = nil;
+  self.completeBlock = nil;
+  self.eventHandler = nil;
 }
 
 #pragma mark - BUNativeExpressFullscreenVideoAdDelegate
@@ -111,7 +119,6 @@
 - (void)nativeExpressFullscreenVideoAdDidLoad:
     (BUNativeExpressFullscreenVideoAd *)ad {
   NSLog(@"[Pangle] 插屏广告加载成功");
-  self.adLoaded = YES;
   if ([self.delegate
           respondsToSelector:@selector(interstitialAdDidLoadSuccess:)]) {
     [self.delegate interstitialAdDidLoadSuccess:ad];
@@ -121,10 +128,22 @@
                     object:nil];
 }
 
+- (void)nativeExpressFullscreenVideoAdDidDownLoadVideo:
+    (BUNativeExpressFullscreenVideoAd *)ad {
+  self.adLoaded = YES;
+  InterstitialLoadCompletionBlock completion = self.loadCompletion;
+  self.loadCompletion = nil;
+  if (completion) completion(YES, nil);
+}
+
 - (void)nativeExpressFullscreenVideoAd:(BUNativeExpressFullscreenVideoAd *)ad
                   didLoadFailWithError:(NSError *)error {
   NSLog(@"[Pangle] 插屏广告加载失败: %@", error.localizedDescription);
   self.adLoaded = NO;
+  InterstitialLoadCompletionBlock completion = self.loadCompletion;
+  self.loadCompletion = nil;
+  if (completion) completion(NO, error);
+  if (self.eventHandler) self.eventHandler(@"failed", error);
   if ([self.delegate
           respondsToSelector:@selector(interstitialAdDidLoadFail:error:)]) {
     [self.delegate interstitialAdDidLoadFail:ad error:error];
@@ -137,6 +156,7 @@
 - (void)nativeExpressFullscreenVideoAdDidVisible:
     (BUNativeExpressFullscreenVideoAd *)ad {
   NSLog(@"[Pangle] 插屏广告已展示");
+  if (self.eventHandler) self.eventHandler(@"presented", nil);
   if ([self.delegate respondsToSelector:@selector(interstitialAdDidShow:)]) {
     [self.delegate interstitialAdDidShow:ad];
   }
@@ -148,6 +168,7 @@
 - (void)nativeExpressFullscreenVideoAdDidClick:
     (BUNativeExpressFullscreenVideoAd *)ad {
   NSLog(@"[Pangle] 用户点击插屏广告");
+  if (self.eventHandler) self.eventHandler(@"click", nil);
   if ([self.delegate respondsToSelector:@selector(interstitialAdDidClick:)]) {
     [self.delegate interstitialAdDidClick:ad];
   }
@@ -159,7 +180,7 @@
 - (void)nativeExpressFullscreenVideoAdDidClose:
     (BUNativeExpressFullscreenVideoAd *)ad {
   NSLog(@"[Pangle] 插屏广告关闭");
-  [self removeAd];
+  if (self.eventHandler) self.eventHandler(@"closed", nil);
 
   if (self.completeBlock) {
     self.completeBlock(YES, nil);
@@ -171,16 +192,40 @@
   [[NSNotificationCenter defaultCenter]
       postNotificationName:@"PangleInterstitialAdClosed"
                     object:nil];
+  [self removeAd];
+}
+
+- (void)nativeExpressFullscreenVideoAdDidClickSkip:
+    (BUNativeExpressFullscreenVideoAd *)ad {
+  if (self.eventHandler) self.eventHandler(@"skip", nil);
+}
+
+- (void)nativeExpressFullscreenVideoAdDidPlayFinish:
+            (BUNativeExpressFullscreenVideoAd *)ad
+                                  didFailWithError:(NSError *)error {
+  if (self.eventHandler)
+    self.eventHandler(error ? @"playback-failed" : @"video-complete", error);
+}
+
+- (void)nativeExpressFullscreenVideoAdDidShowFailed:
+            (BUNativeExpressFullscreenVideoAd *)ad
+                                           error:(NSError *)error {
+  if (self.eventHandler) self.eventHandler(@"failed", error);
+  if (self.completeBlock) self.completeBlock(NO, error);
 }
 
 - (void)nativeExpressFullscreenVideoAd:(BUNativeExpressFullscreenVideoAd *)ad
                       didFailWithError:(NSError *)error {
   NSLog(@"[Pangle] 插屏广告展示失败: %@", error.localizedDescription);
-  [self removeAd];
-
-  if (self.completeBlock) {
+  if (self.eventHandler) self.eventHandler(@"failed", error);
+  InterstitialLoadCompletionBlock loadCompletion = self.loadCompletion;
+  self.loadCompletion = nil;
+  if (loadCompletion) {
+    loadCompletion(NO, error);
+  } else if (self.completeBlock) {
     self.completeBlock(NO, error);
   }
+  [self removeAd];
 }
 
 @end

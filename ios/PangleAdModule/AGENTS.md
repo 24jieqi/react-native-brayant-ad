@@ -19,6 +19,7 @@
 | `ExpressNativeAd.h/.m` | Feed 原生广告渲染器 |
 | `FeedAdViewManager.h/.m` | Feed 原生组件管理器 |
 | `InterstitialAd.h/.m` | 插屏广告加载与展示 |
+| `RewardedAd.h/.m` | 激励视频加载、展示和奖励校验 |
 | `PAGSDKService.h/.m` | Pangle SDK 服务生命周期管理 |
 | `AdResourceStore.h/.m` | 广告资源缓存 |
 | `ATTPermissionService.h/.m` | ATT 权限请求 |
@@ -28,5 +29,6 @@
 - 所有广告类型共用同一个 `PangleAdModule` 实例
 - 初始化仅依赖 `appid`，iOS 不需要 `app`/`uid`/`amount`/`reward`
 - 开屏广告 iOS 当前可靠关闭事件为 `onAdClose`
-- 激励/全屏视频 iOS 当前复用插屏链路
+- 激励视频必须使用 `BUNativeExpressRewardedVideoAd`，新插屏使用 `BUNativeExpressFullscreenVideoAd`
+- 两种全屏广告均等待素材下载完成回调后再展示
 - 新增广告类型：在 `PangleAdModule.m` 新增 RCT_EXPORT_METHOD，按需创建对应 `.h`/`.m`

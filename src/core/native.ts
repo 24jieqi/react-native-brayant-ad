@@ -5,6 +5,8 @@ import type {
   AdRequest,
   AdSdkConfig,
   FullscreenAdResult,
+  InterstitialAdResult,
+  RewardedAdResult,
 } from './types';
 
 export interface NativeAdV2Module extends NativeModule {
@@ -15,6 +17,11 @@ export interface NativeAdV2Module extends NativeModule {
     preloadToken?: AdPreloadToken;
     timeoutMs: number;
   }) => Promise<FullscreenAdResult>;
+  showFullscreenAdV2: (params: {
+    request: AdRequest;
+    preloadToken?: AdPreloadToken;
+    loadTimeoutMs: number;
+  }) => Promise<RewardedAdResult | InterstitialAdResult>;
 }
 
 const LINKING_ERROR =

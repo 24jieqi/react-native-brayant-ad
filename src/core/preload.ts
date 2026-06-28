@@ -5,12 +5,16 @@ const preloadTasks = new Map<string, Promise<AdPreloadToken>>();
 const preloadedTokens = new Map<string, AdPreloadToken[]>();
 
 const getProfileKey = (request: AdRequest): string =>
-  [
+  JSON.stringify([
     request.format,
     request.slotIds.join('|'),
     Math.round(request.size?.width ?? 0),
     Math.round(request.size?.height ?? 0),
-  ].join(':');
+    request.reward?.userId ?? '',
+    request.reward?.rewardName ?? '',
+    request.reward?.rewardAmount ?? '',
+    request.reward?.extra ?? '',
+  ]);
 
 const preload = (
   expectedFormat: AdFormat,
@@ -60,6 +64,14 @@ export const preloadBannerAd = (request: AdRequest): Promise<AdPreloadToken> =>
 export const preloadSplashAdV2 = (
   request: AdRequest
 ): Promise<AdPreloadToken> => preload('splash', request);
+
+export const preloadRewardedAd = (
+  request: AdRequest
+): Promise<AdPreloadToken> => preload('rewarded', request);
+
+export const preloadInterstitialAd = (
+  request: AdRequest
+): Promise<AdPreloadToken> => preload('interstitial', request);
 
 export const claimPreloadToken = (
   request: AdRequest

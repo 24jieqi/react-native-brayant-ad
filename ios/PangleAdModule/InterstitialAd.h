@@ -10,6 +10,8 @@
 NS_ASSUME_NONNULL_BEGIN
 
 typedef void(^InterstitialCompletionBlock)(BOOL success, NSError * _Nullable error);
+typedef void(^InterstitialLoadCompletionBlock)(BOOL success, NSError * _Nullable error);
+typedef void(^InterstitialEventHandler)(NSString *event, NSError * _Nullable error);
 
 @protocol InterstitialAdDelegate <NSObject>
 @optional
@@ -26,8 +28,11 @@ typedef void(^InterstitialCompletionBlock)(BOOL success, NSError * _Nullable err
 
 @property (nonatomic, weak, nullable) id<InterstitialAdDelegate> delegate;
 @property (nonatomic, strong, readonly, nullable) BUNativeExpressFullscreenVideoAd *interstitialAd;
+@property(nonatomic, copy, nullable) InterstitialEventHandler eventHandler;
 
 - (void)loadAdWithSlotID:(NSString *)slotID;
+- (void)loadAdWithSlotID:(NSString *)slotID
+              completion:(nullable InterstitialLoadCompletionBlock)completion;
 - (BOOL)isAdReady;
 - (void)showAdInRootViewController:(UIViewController *)rootVC
                           onComplete:(nullable InterstitialCompletionBlock)completeBlock;

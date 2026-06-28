@@ -27,11 +27,14 @@ Android 广告能力通过 `BrayantAdModule`（RN 桥接）和 `AdManager`（广
 | `BrayantAdPackage.java` | RN 包注册 |
 | `WeakHandler.java` | 弱引用 Handler（根级 + dy 级各一份） |
 | `core/AdResourcePool.java` | 广告资源池 |
+| `core/RewardedAdController.java` | v2 激励视频加载、展示和奖励回调 |
+| `core/InterstitialAdController.java` | v2 新插屏加载与展示 |
 | `utils/` | `DislikeDialog.java`, `RewardBundleModel.java`, `TToast.java`, `Utils.java` |
 
 ## 关键规则
 
 - 所有 `ViewManager` 必须注册到 `BrayantAdPackage.createViewManagers()`
-- 插屏广告 Android 复用全屏视频通道（`FullScreenVideoModule`）
+- 新插屏按穿山甲规范使用 `loadFullScreenVideoAd`；v2 直接在当前 Activity 展示
+- `RewardVideoModule` / `FullScreenVideoModule` 仅用于 legacy 兼容，新功能统一从 `AdManager` 进入
 - Draw 信息流不提供 iOS 实现，JS 侧需 `Platform.OS === 'android'` 保护
 - 新增广告类型：创建对应包 → 实现 Module + ViewManager/Activity → 注册到 `BrayantAdPackage`

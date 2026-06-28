@@ -1,245 +1,190 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  init,
-  startRewardVideo,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import {
+  createAdRequest,
+  initializeAdSdk,
+  preloadInterstitialAd,
+  preloadRewardedAd,
   requestPermission,
-  dyLoadSplashAd,
-  legacy,
-  hasPreloadedSplashAd,
-  startFullScreenVideo,
-  BannerAdView,
+  showInterstitialAd,
+  showRewardedAd,
 } from 'react-native-brayant-ad';
 
+const APP_ID = '替换为穿山甲 App ID';
+const REWARDED_SLOT_ID = '替换为激励视频代码位';
+const INTERSTITIAL_SLOT_ID = '替换为新插屏代码位';
+
 export default function App() {
-  const [showBannerView, setShowBannerView] = useState(false);
-  const [preloaded, setPreloaded] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+  const [message, setMessage] = useState('等待 SDK 初始化');
+
+  const rewardedRequest = useMemo(
+    () =>
+      createAdRequest({
+        format: 'rewarded',
+        slotIds: [REWARDED_SLOT_ID],
+        scene: 'example-reward',
+        reward: {
+          userId: 'example-user-001',
+          rewardName: '金币',
+          rewardAmount: 100,
+          extra: JSON.stringify({ orderId: 'example-order-001' }),
+        },
+      }),
+    []
+  );
+
+  const interstitialRequest = useMemo(
+    () =>
+      createAdRequest({
+        format: 'interstitial',
+        slotIds: [INTERSTITIAL_SLOT_ID],
+        scene: 'example-level-complete',
+      }),
+    []
+  );
 
   useEffect(() => {
-    init({
-      appid: '****',
-      app: '设备信息',
+    initializeAdSdk({
+      appId: APP_ID,
+      appName: 'BrayantAd Example',
+      debug: __DEV__,
+      allowInitialization: true,
     })
-      .then((res) => {
-        console.log(res);
-        setShowBannerView(true);
+      .then(() => {
         requestPermission();
-        // SDK初始化完成后预加载开屏广告
-        preloadSplashAdExample();
+        setInitialized(true);
+        setMessage('SDK 初始化完成');
       })
-      .catch((e) => {
-        console.log(e);
+      .catch((error: unknown) => {
+        setMessage(`SDK 初始化失败：${String(error)}`);
       });
   }, []);
 
-  // 预加载开屏广告示例
-  const preloadSplashAdExample = async () => {
+  const preloadRewarded = async () => {
     try {
-      // 在应用启动时预加载开屏广告，避免展示时出现白屏
-      const result = await legacy.preloadSplashAd({ codeid: '****' });
-      console.log('预加载开屏广告成功:', result);
-      setPreloaded(true);
+      const token = await preloadRewardedAd(rewardedRequest);
+      setMessage(`激励视频预加载完成：${token.slotId}`);
     } catch (error) {
-      console.log('预加载开屏广告失败:', error);
+      setMessage(`激励视频预加载失败：${String(error)}`);
     }
   };
 
-  // 检查预加载状态
-  const checkPreloadStatus = async () => {
-    const status = await hasPreloadedSplashAd();
-    console.log('预加载状态:', status);
-    setPreloaded(status.hasAd);
-  };
-
-  // 开屏广告（已预加载版本）
-  const onOpenScren = async () => {
-    // 检查是否有预加载的广告
-    const status = await hasPreloadedSplashAd();
-    if (!status.hasAd) {
-      console.log('没有预加载的广告，先进行预加载...');
-      await preloadSplashAdExample();
+  const presentRewarded = async () => {
+    try {
+      const result = await showRewardedAd({
+        request: rewardedRequest,
+        loadTimeoutMs: 10_000,
+        onEvent: (event) => console.log('Rewarded event', event),
+      });
+      if (result.reward?.valid) {
+        // 业务必须依据奖励校验结果发奖，不能只判断广告关闭或视频播放完成。
+        setMessage(
+          `奖励有效：${result.reward.amount} ${result.reward.name ?? ''}`
+        );
+        return;
+      }
+      setMessage(`未获得奖励，广告状态：${result.status}`);
+    } catch (error) {
+      setMessage(`激励视频调用失败：${String(error)}`);
     }
-
-    const splashAd = dyLoadSplashAd({
-      codeid: '****',
-      anim: 'default',
-    });
-
-    splashAd.subscribe('onAdClose', (event) => {
-      console.log('广告关闭', event);
-    });
-
-    splashAd.subscribe('onAdSkip', (i) => {
-      console.log('用户点击跳过监听', i);
-    });
-
-    splashAd.subscribe('onAdError', (e) => {
-      console.log('开屏加载失败监听', e);
-    });
-
-    splashAd.subscribe('onAdClick', (e) => {
-      console.log('开屏被用户点击了', e);
-    });
-
-    splashAd.subscribe('onAdShow', (e) => {
-      console.log('开屏开始展示', e);
-    });
   };
+
+  const preloadInterstitial = async () => {
+    try {
+      const token = await preloadInterstitialAd(interstitialRequest);
+      setMessage(`新插屏预加载完成：${token.slotId}`);
+    } catch (error) {
+      setMessage(`新插屏预加载失败：${String(error)}`);
+    }
+  };
+
+  const presentInterstitial = async () => {
+    try {
+      const result = await showInterstitialAd({
+        request: interstitialRequest,
+        loadTimeoutMs: 10_000,
+        onEvent: (event) => console.log('Interstitial event', event),
+      });
+      setMessage(`新插屏结束：${result.status}`);
+    } catch (error) {
+      setMessage(`新插屏调用失败：${String(error)}`);
+    }
+  };
+
   return (
-    <View style={styles.container}>
-      <BannerAdView
-        codeid={'****'}
-        adWidth={320}
-        adHeight={50}
-        visible={showBannerView}
-        onAdRenderSuccess={(data: any) => {
-          console.log('Banner 广告渲染成功！', data);
-        }}
-        onAdError={(err: any) => {
-          console.log('Banner 广告加载失败！', err);
-        }}
-        onAdDismiss={(data: any) => {
-          console.log('Banner 广告关闭！', data);
-        }}
-        onAdClick={(val: any) => {
-          console.log('Banner 广告被用户点击！', val);
-        }}
-        onAdShow={(val: any) => {
-          console.log('Banner 广告展示', val);
-        }}
-        onAdDislike={(val: any) => {
-          console.log('Banner 用户不感兴趣', val);
-        }}
-      />
-      {/*<FeedAdView*/}
-      {/*  codeid={'****'}*/}
-      {/*  adWidth={400}*/}
-      {/*  visible={showFeedView}*/}
-      {/*  onAdLayout={(data: any) => {*/}
-      {/*    console.log('Feed 广告加载成功！', data);*/}
-      {/*  }}*/}
-      {/*  onAdClose={(data: any) => {*/}
-      {/*    console.log('Feed 广告关闭！', data);*/}
-      {/*  }}*/}
-      {/*  onAdError={(err: any) => {*/}
-      {/*    console.log('Feed 广告加载失败！', err);*/}
-      {/*  }}*/}
-      {/*  onAdClick={(val: any) => {*/}
-      {/*    console.log('Feed 广告被用户点击！', val);*/}
-      {/*  }}*/}
-      {/*/>*/}
-      <TouchableOpacity
-        style={{
-          marginVertical: 10,
-          paddingHorizontal: 30,
-          paddingVertical: 15,
-          backgroundColor: '#F96',
-          borderRadius: 50,
-        }}
-        onPress={onOpenScren}
-      >
-        <Text style={{ textAlign: 'center' }}>
-          {' '}
-          开屏广告{preloaded ? '(已预加载)' : '(未预加载)'}
-        </Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={{
-          marginVertical: 10,
-          paddingHorizontal: 30,
-          paddingVertical: 15,
-          backgroundColor: '#69F',
-          borderRadius: 50,
-        }}
-        onPress={checkPreloadStatus}
-      >
-        <Text style={{ textAlign: 'center' }}> 检查预加载状态</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={{
-          marginVertical: 20,
-          paddingHorizontal: 30,
-          paddingVertical: 15,
-          backgroundColor: '#F96',
-          borderRadius: 50,
-        }}
-        onPress={() => {
-          let fullVideo = startFullScreenVideo({
-            codeid: '****',
-          });
-          console.log('FullVideoAd rs:', fullVideo);
-          fullVideo.result?.then((val: any) => {
-            console.log('FullVideoAd rs then val', val);
-          });
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView contentContainerStyle={styles.container}>
+        <Text style={styles.title}>穿山甲 v2 全屏广告示例</Text>
+        <Text style={styles.status}>{message}</Text>
+        <View style={styles.group}>
+          <ActionButton
+            label="预加载激励视频"
+            disabled={!initialized}
+            onPress={preloadRewarded}
+          />
+          <ActionButton
+            label="展示激励视频"
+            disabled={!initialized}
+            onPress={presentRewarded}
+          />
+        </View>
+        <View style={styles.group}>
+          <ActionButton
+            label="预加载新插屏"
+            disabled={!initialized}
+            onPress={preloadInterstitial}
+          />
+          <ActionButton
+            label="展示新插屏"
+            disabled={!initialized}
+            onPress={presentInterstitial}
+          />
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
 
-          fullVideo.subscribe('onAdLoaded' as any, (event) => {
-            console.log('广告加载成功监听', event);
-          });
-
-          fullVideo.subscribe('onAdError' as any, (event) => {
-            console.log('广告加载失败监听', event);
-          });
-
-          fullVideo.subscribe('onAdClose' as any, (event) => {
-            console.log('广告被关闭监听', event);
-          });
-
-          fullVideo.subscribe('onAdClick' as any, (event) => {
-            console.log('广告点击查看详情监听', event);
-          });
-        }}
-      >
-        <Text style={{ textAlign: 'center' }}> Start 全屏视频广告</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={{
-          marginVertical: 20,
-          paddingHorizontal: 30,
-          paddingVertical: 15,
-          backgroundColor: '#F96',
-          borderRadius: 50,
-        }}
-        onPress={() => {
-          const rewardVideo = startRewardVideo({
-            codeid: '****',
-          });
-
-          rewardVideo.result.then((val: any) => {
-            console.log('RewardVideo 回调结果', val);
-          });
-
-          rewardVideo.subscribe('onAdLoaded' as any, (event) => {
-            console.log('广告加载成功监听', event);
-          });
-
-          rewardVideo.subscribe('onAdError' as any, (event) => {
-            console.log('广告加载失败监听', event);
-          });
-
-          rewardVideo.subscribe('onAdClose' as any, (event) => {
-            console.log('广告被关闭监听', event);
-          });
-
-          rewardVideo.subscribe('onAdClick' as any, (event) => {
-            console.log('广告点击查看详情监听', event);
-          });
-        }}
-      >
-        <Text style={{ textAlign: 'center' }}> Start RewardVideoAd</Text>
-      </TouchableOpacity>
-    </View>
+function ActionButton({
+  label,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  disabled: boolean;
+  onPress: () => void | Promise<void>;
+}) {
+  return (
+    <Pressable
+      disabled={disabled}
+      onPress={onPress}
+      style={[styles.button, disabled && styles.buttonDisabled]}
+    >
+      <Text style={styles.buttonText}>{label}</Text>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+  safeArea: { flex: 1, backgroundColor: '#f5f6f8' },
+  container: { padding: 24, gap: 20 },
+  title: { fontSize: 24, fontWeight: '700', color: '#111827' },
+  status: { minHeight: 48, color: '#374151', lineHeight: 22 },
+  group: { gap: 12 },
+  button: {
+    backgroundColor: '#2563eb',
+    borderRadius: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
   },
-  box: {
-    width: 60,
-    height: 60,
-    marginVertical: 20,
-  },
+  buttonDisabled: { opacity: 0.4 },
+  buttonText: { color: '#ffffff', fontSize: 16, textAlign: 'center' },
 });

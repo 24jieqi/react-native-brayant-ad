@@ -2,12 +2,17 @@ package com.brayantad;
 
 import android.content.Context;
 import android.content.Intent;
+import android.app.Activity;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
 
 import com.brayantad.core.AdResourcePool;
+import com.brayantad.core.InterstitialAdController;
+import com.brayantad.core.RewardedAdController;
 import com.brayantad.dy.DyADCore;
 import com.brayantad.dy.splash.activity.SplashActivity;
 import com.bytedance.sdk.openadsdk.AdSlot;
@@ -16,6 +21,8 @@ import com.bytedance.sdk.openadsdk.CSJSplashAd;
 import com.bytedance.sdk.openadsdk.TTAdNative;
 import com.bytedance.sdk.openadsdk.TTAdSdk;
 import com.bytedance.sdk.openadsdk.TTNativeExpressAd;
+import com.bytedance.sdk.openadsdk.TTFullScreenVideoAd;
+import com.bytedance.sdk.openadsdk.TTRewardVideoAd;
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.ReactApplicationContext;
@@ -36,6 +43,7 @@ public class AdManager extends ReactContextBaseJavaModule {
   public static ReactApplicationContext reactAppContext;
   public static final String TAG = "AdManager";
   private static final Map<String, Promise> splashPromises = new ConcurrentHashMap<>();
+  private static String activeFullscreenRequestId;
 
   public AdManager(ReactApplicationContext reactContext) {
     super(reactContext);
@@ -188,6 +196,16 @@ public class AdManager extends ReactContextBaseJavaModule {
       return;
     }
 
+    if ("rewarded".equals(format)) {
+      preloadRewardedAdV2(requestId, slotId, request, promise);
+      return;
+    }
+
+    if ("interstitial".equals(format)) {
+      preloadInterstitialAdV2(requestId, slotId, promise);
+      return;
+    }
+
     promise.reject(TAG, "unsupported format: " + format);
   }
 
@@ -291,6 +309,74 @@ public class AdManager extends ReactContextBaseJavaModule {
     );
   }
 
+  private void preloadRewardedAdV2(
+    String requestId,
+    String slotId,
+    ReadableMap request,
+    Promise promise
+  ) {
+    ReadableMap reward = request.hasKey("reward") ? request.getMap("reward") : null;
+    RewardedAdController.load(
+      DyADCore.TTAdSdk,
+      slotId,
+      getOptionalString(reward, "userId"),
+      getOptionalString(reward, "rewardName"),
+      getOptionalInt(reward, "rewardAmount"),
+      getOptionalString(reward, "extra"),
+      true,
+      new RewardedAdController.LoadCallback() {
+        @Override
+        public void onLoaded(TTRewardVideoAd ad) {
+          AdResourcePool.Entry entry = AdResourcePool.put(
+            requestId,
+            "rewarded",
+            slotId,
+            0,
+            0,
+            ad
+          );
+          promise.resolve(toTokenMap(entry));
+        }
+
+        @Override
+        public void onError(int code, String message) {
+          promise.reject(String.valueOf(code), message);
+        }
+      }
+    );
+  }
+
+  private void preloadInterstitialAdV2(
+    String requestId,
+    String slotId,
+    Promise promise
+  ) {
+    InterstitialAdController.load(
+      DyADCore.TTAdSdk,
+      slotId,
+      true,
+      new InterstitialAdController.LoadCallback() {
+        @Override
+        public void onLoaded(TTFullScreenVideoAd ad) {
+          AdResourcePool.Entry entry = AdResourcePool.put(
+            requestId,
+            "interstitial",
+            slotId,
+            0,
+            0,
+            ad
+          );
+          promise.resolve(toTokenMap(entry));
+        }
+
+        @Override
+        public void onError(int code, String message) {
+          promise.reject(String.valueOf(code), message);
+        }
+      }
+    );
+  }
+
   @ReactMethod
   public void showSplashAdV2(ReadableMap params, Promise promise) {
     ReadableMap request = params.getMap("request");
@@ -325,6 +411,266 @@ public class AdManager extends ReactContextBaseJavaModule {
     intent.putExtra("timeoutMs", timeoutMs);
     getCurrentActivity().startActivity(intent);
     getCurrentActivity().overridePendingTransition(0, 0);
+  }
+
+  @ReactMethod
+  public void showFullscreenAdV2(ReadableMap params, Promise promise) {
+    ReadableMap request = params.getMap("request");
+    if (request == null) {
+      promise.reject(TAG, "request is required");
+      return;
+    }
+
+    String requestId = request.getString("requestId");
+    String format = request.getString("format");
+    ReadableArray slotIds = request.getArray("slotIds");
+    String slotId = slotIds != null && slotIds.size() > 0 ? slotIds.getString(0) : null;
+    int loadTimeoutMs = params.hasKey("loadTimeoutMs")
+      ? params.getInt("loadTimeoutMs")
+      : 10000;
+    String token = null;
+    if (params.hasKey("preloadToken")) {
+      ReadableMap preloadToken = params.getMap("preloadToken");
+      token = preloadToken != null ? getOptionalString(preloadToken, "token") : null;
+    }
+
+    if (
+      requestId == null ||
+      slotId == null ||
+      slotId.isEmpty() ||
+      (!"rewarded".equals(format) && !"interstitial".equals(format))
+    ) {
+      promise.reject(TAG, "invalid fullscreen request");
+      return;
+    }
+    if (DyADCore.TTAdSdk == null) {
+      resolveImmediateFullscreenFailure(
+        promise,
+        requestId,
+        slotId,
+        "SDK_NOT_INITIALIZED",
+        "广告 SDK 尚未初始化"
+      );
+      return;
+    }
+
+    Activity activity = getCurrentActivity();
+    if (activity == null) {
+      resolveImmediateFullscreenFailure(
+        promise,
+        requestId,
+        slotId,
+        "ACTIVITY_UNAVAILABLE",
+        "当前 Activity 不可用"
+      );
+      return;
+    }
+
+    synchronized (AdManager.class) {
+      if (activeFullscreenRequestId != null) {
+        WritableMap result = createFullscreenResult(
+          requestId,
+          slotId,
+          "cancelled",
+          0,
+          false,
+          false,
+          createError("FULLSCREEN_BUSY", "已有全屏广告正在展示", null, null),
+          null
+        );
+        promise.resolve(result);
+        return;
+      }
+      activeFullscreenRequestId = requestId;
+    }
+
+    AdResourcePool.Entry entry = AdResourcePool.consume(token, format, slotId, 0, 0);
+    FullscreenSession session = new FullscreenSession(
+      promise,
+      requestId,
+      format,
+      slotId,
+      entry != null ? "preloaded" : "realtime",
+      Math.max(loadTimeoutMs, 1)
+    );
+
+    UiThreadUtil.runOnUiThread(() -> {
+      if ("rewarded".equals(format)) {
+        ReadableMap reward = request.hasKey("reward") ? request.getMap("reward") : null;
+        if (entry != null && entry.resource instanceof TTRewardVideoAd) {
+          session.emit("loaded", null, null, null);
+          showRewardedSession(activity, (TTRewardVideoAd) entry.resource, session);
+          return;
+        }
+        session.startTimeout();
+        session.emit("loading", null, null, null);
+        RewardedAdController.load(
+          DyADCore.TTAdSdk,
+          slotId,
+          getOptionalString(reward, "userId"),
+          getOptionalString(reward, "rewardName"),
+          getOptionalInt(reward, "rewardAmount"),
+          getOptionalString(reward, "extra"),
+          false,
+          new RewardedAdController.LoadCallback() {
+            @Override
+            public void onLoaded(TTRewardVideoAd ad) {
+              if (session.isSettled()) return;
+              session.cancelTimeout();
+              session.emit("loaded", null, null, null);
+              showRewardedSession(activity, ad, session);
+            }
+
+            @Override
+            public void onError(int code, String message) {
+              session.finish(
+                "failed",
+                createError("AD_LOAD_FAILED", message, code, "load")
+              );
+            }
+          }
+        );
+        return;
+      }
+
+      if (entry != null && entry.resource instanceof TTFullScreenVideoAd) {
+        session.emit("loaded", null, null, null);
+        showInterstitialSession(activity, (TTFullScreenVideoAd) entry.resource, session);
+        return;
+      }
+      session.startTimeout();
+      session.emit("loading", null, null, null);
+      InterstitialAdController.load(
+        DyADCore.TTAdSdk,
+        slotId,
+        false,
+        new InterstitialAdController.LoadCallback() {
+          @Override
+          public void onLoaded(TTFullScreenVideoAd ad) {
+            if (session.isSettled()) return;
+            session.cancelTimeout();
+            session.emit("loaded", null, null, null);
+            showInterstitialSession(activity, ad, session);
+          }
+
+          @Override
+          public void onError(int code, String message) {
+            session.finish(
+              "failed",
+              createError("AD_LOAD_FAILED", message, code, "load")
+            );
+          }
+        }
+      );
+    });
+  }
+
+  private static void showRewardedSession(
+    Activity activity,
+    TTRewardVideoAd ad,
+    FullscreenSession session
+  ) {
+    try {
+      RewardedAdController.show(
+        activity,
+        ad,
+        new RewardedAdController.InteractionCallback() {
+          @Override
+          public void onPresented() {
+            session.presented = true;
+            session.emit("presented", null, null, null);
+          }
+
+          @Override
+          public void onClick() {
+            session.emit("presented", "click", null, null);
+          }
+
+          @Override
+          public void onClosed() {
+            session.finish(session.skipped ? "skipped" : "closed", null);
+          }
+
+          @Override
+          public void onVideoComplete() {
+            session.videoCompleted = true;
+            session.emit("presented", "video-complete", null, null);
+          }
+
+          @Override
+          public void onVideoError() {
+            session.finish(
+              "failed",
+              createError("AD_PLAYBACK_FAILED", "激励视频播放失败", null, "playback")
+            );
+          }
+
+          @Override
+          public void onReward(RewardedAdController.RewardData reward) {
+            session.reward = reward;
+            session.emit("presented", "reward", null, reward);
+          }
+
+          @Override
+          public void onSkipped() {
+            session.skipped = true;
+            session.emit("presented", "skip", null, null);
+          }
+        }
+      );
+    } catch (RuntimeException exception) {
+      session.finish(
+        "failed",
+        createError("AD_SHOW_FAILED", exception.getMessage(), null, "show")
+      );
+    }
+  }
+
+  private static void showInterstitialSession(
+    Activity activity,
+    TTFullScreenVideoAd ad,
+    FullscreenSession session
+  ) {
+    try {
+      InterstitialAdController.show(
+        activity,
+        ad,
+        new InterstitialAdController.InteractionCallback() {
+          @Override
+          public void onPresented() {
+            session.presented = true;
+            session.emit("presented", null, null, null);
+          }
+
+          @Override
+          public void onClick() {
+            session.emit("presented", "click", null, null);
+          }
+
+          @Override
+          public void onClosed() {
+            session.finish(session.skipped ? "skipped" : "closed", null);
+          }
+
+          @Override
+          public void onVideoComplete() {
+            session.videoCompleted = true;
+            session.emit("presented", "video-complete", null, null);
+          }
+
+          @Override
+          public void onSkipped() {
+            session.skipped = true;
+            session.emit("presented", "skip", null, null);
+          }
+        }
+      );
+    } catch (RuntimeException exception) {
+      session.finish(
+        "failed",
+        createError("AD_SHOW_FAILED", exception.getMessage(), null, "show")
+      );
+    }
   }
 
   public static void emitV2Event(WritableMap event) {
@@ -364,6 +710,191 @@ public class AdManager extends ReactContextBaseJavaModule {
       result.putMap("error", error);
     }
     promise.resolve(result);
+  }
+
+  private static final class FullscreenSession {
+    private final Promise promise;
+    private final String requestId;
+    private final String format;
+    private final String slotId;
+    private final String source;
+    private final long startedAt = System.currentTimeMillis();
+    private final int loadTimeoutMs;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable timeoutRunnable;
+    private boolean settled;
+    private boolean presented;
+    private boolean videoCompleted;
+    private boolean skipped;
+    private RewardedAdController.RewardData reward;
+
+    FullscreenSession(
+      Promise promise,
+      String requestId,
+      String format,
+      String slotId,
+      String source,
+      int loadTimeoutMs
+    ) {
+      this.promise = promise;
+      this.requestId = requestId;
+      this.format = format;
+      this.slotId = slotId;
+      this.source = source;
+      this.loadTimeoutMs = loadTimeoutMs;
+      this.timeoutRunnable = () -> finish(
+        "failed",
+        createError("AD_LOAD_TIMEOUT", "广告加载超时", null, "load")
+      );
+    }
+
+    synchronized boolean isSettled() {
+      return settled;
+    }
+
+    void startTimeout() {
+      handler.postDelayed(timeoutRunnable, loadTimeoutMs);
+    }
+
+    void cancelTimeout() {
+      handler.removeCallbacks(timeoutRunnable);
+    }
+
+    void emit(
+      String state,
+      String action,
+      WritableMap error,
+      RewardedAdController.RewardData rewardData
+    ) {
+      if (isSettled() && !"terminal".equals(state)) {
+        return;
+      }
+      WritableMap event = Arguments.createMap();
+      event.putString("requestId", requestId);
+      event.putString("format", format);
+      event.putString("slotId", slotId);
+      event.putString("state", state);
+      event.putString("source", source);
+      event.putDouble("elapsedMs", System.currentTimeMillis() - startedAt);
+      if (action != null) event.putString("action", action);
+      if (error != null) event.putMap("error", error);
+      if (rewardData != null) event.putMap("reward", createRewardMap(rewardData));
+      emitV2Event(event);
+    }
+
+    synchronized void finish(String status, WritableMap error) {
+      if (settled) return;
+      settled = true;
+      cancelTimeout();
+      long elapsedMs = System.currentTimeMillis() - startedAt;
+      emit("terminal", null, error, null);
+      promise.resolve(
+        createFullscreenResult(
+          requestId,
+          slotId,
+          status,
+          elapsedMs,
+          presented,
+          videoCompleted,
+          error,
+          reward
+        )
+      );
+      synchronized (AdManager.class) {
+        if (requestId.equals(activeFullscreenRequestId)) {
+          activeFullscreenRequestId = null;
+        }
+      }
+    }
+  }
+
+  private static void resolveImmediateFullscreenFailure(
+    Promise promise,
+    String requestId,
+    String slotId,
+    String code,
+    String message
+  ) {
+    WritableMap error = createError(code, message, null, "load");
+    promise.resolve(
+      createFullscreenResult(
+        requestId,
+        slotId,
+        "failed",
+        0,
+        false,
+        false,
+        error,
+        null
+      )
+    );
+  }
+
+  private static WritableMap createFullscreenResult(
+    String requestId,
+    String slotId,
+    String status,
+    long elapsedMs,
+    boolean presented,
+    boolean videoCompleted,
+    WritableMap error,
+    RewardedAdController.RewardData reward
+  ) {
+    WritableMap result = Arguments.createMap();
+    result.putString("requestId", requestId);
+    result.putString("slotId", slotId);
+    result.putString("status", status);
+    result.putDouble("elapsedMs", elapsedMs);
+    result.putBoolean("presented", presented);
+    result.putBoolean("videoCompleted", videoCompleted);
+    if (error != null) result.putMap("error", error);
+    if (reward != null) result.putMap("reward", createRewardMap(reward));
+    return result;
+  }
+
+  private static WritableMap createRewardMap(
+    RewardedAdController.RewardData reward
+  ) {
+    WritableMap result = Arguments.createMap();
+    result.putBoolean("valid", reward.valid);
+    result.putInt("type", reward.type);
+    if (reward.name != null) result.putString("name", reward.name);
+    result.putInt("amount", reward.amount);
+    result.putDouble("proposedAmount", reward.proposedAmount);
+    if (!reward.valid) {
+      WritableMap error = createError(
+        "REWARD_INVALID",
+        reward.errorMessage != null ? reward.errorMessage : "奖励校验未通过",
+        reward.errorCode,
+        "playback"
+      );
+      result.putMap("error", error);
+    }
+    return result;
+  }
+
+  private static WritableMap createError(
+    String code,
+    String message,
+    Integer nativeCode,
+    String stage
+  ) {
+    WritableMap error = Arguments.createMap();
+    error.putString("code", code);
+    error.putString("message", message != null ? message : code);
+    if (nativeCode != null) error.putInt("nativeCode", nativeCode);
+    if (stage != null) error.putString("stage", stage);
+    return error;
+  }
+
+  private static String getOptionalString(ReadableMap map, String key) {
+    if (map == null || !map.hasKey(key) || map.isNull(key)) return null;
+    return map.getString(key);
+  }
+
+  private static Integer getOptionalInt(ReadableMap map, String key) {
+    if (map == null || !map.hasKey(key) || map.isNull(key)) return null;
+    return map.getInt(key);
   }
 
   private static WritableMap toTokenMap(AdResourcePool.Entry entry) {

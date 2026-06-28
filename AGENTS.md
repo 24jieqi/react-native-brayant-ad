@@ -269,8 +269,11 @@ v1.1.7 引入的核心抽象层，与 `src/dy/api/` 是并列的两套 API 体�
 | `request.ts` | 广告请求工厂 | `createAdRequest()` — 生成 AdRequest |
 | `native.ts` | 原生模块桥接层 | `getNativeAdV2Module()` — iOS → PangleAdModule, Android → AdManager |
 | `sdk.ts` | 初始化 | `initializeAdSdk()` — 防重复初始化保护 |
-| `preload.ts` | 预加载管理 | `preloadFeedAd()`, `preloadBannerAd()`, `preloadSplashAdV2()` — 带令牌缓存和去重 |
-| `splash.ts` | 开屏展示控制器 | `showSplashAd()` — 单请求互斥, 事件订阅, 超时控制 |
+| `preload.ts` | 预加载管理 | Feed、Banner、开屏、激励、新插屏令牌缓存和去重 |
+| `fullscreen-lock.ts` | 全屏互斥 | 开屏、激励、新插屏共享互斥锁 |
+| `fullscreen.ts` | 全屏展示控制器 | 候选回退、事件订阅、超时和统一结算 |
+| `rewarded.ts` / `interstitial.ts` | 强类型入口 | `showRewardedAd()`, `showInterstitialAd()` |
+| `splash.ts` | 开屏展示控制器 | `showSplashAd()` — 全屏互斥、事件订阅、超时控制 |
 | `candidates.ts` | 候选广告位切换逻辑 | `resolveAdSlotIds()`, `shouldTryNextCandidate()` |
 | `state-machine.ts` | 广告生命周期状态机 | `AdLifecycle`, `FullscreenSettlement` |
 
@@ -293,6 +296,7 @@ v1.1.7 引入的核心抽象层，与 `src/dy/api/` 是并列的两套 API 体�
 | `BannerAd.m` + `BrayantBannerAdView.m` | Banner | `BrayantBannerAdView` |
 | `FeedAdView.m` / `ExpressNativeAd.m` | Feed | `FeedAdView` |
 | `InterstitialAd.m` | 插屏 | — |
+| `RewardedAd.m` | 激励视频 | — |
 | `BrayantBannerAdViewManager.m` / `FeedAdViewManager.m` | 原生组件管理器 | — |
 | `PAGSDKService.m` | SDK 服务 | — |
 | `AdResourceStore.m` | 资源缓存 | — |
@@ -311,7 +315,7 @@ v1.1.7 引入的核心抽象层，与 `src/dy/api/` 是并列的两套 API 体�
 | `dy/rewardVideo/` | 激励视频 + Activity |
 | `dy/splash/` | 开屏 + Activity |
 | `dy/service/` | CSJ 开屏广告服务 |
-| `core/` | AdResourcePool 资源池 |
+| `core/` | 资源池、激励视频与新插屏 v2 控制器 |
 | `utils/` | 工具类（DislikeDialog, Utils, TToast 等） |
 
 根级文件：
