@@ -53,6 +53,7 @@ NSString *const PangleFeedAdLayout = @"PangleFeedAdLayout";
 @property(nonatomic, strong) BannerAd *legacyBannerAd;
 @property(nonatomic, strong) ExpressNativeAd *legacyExpressNativeAd;
 @property(nonatomic, copy, nullable) NSString *activeFullscreenRequestId;
+@property(nonatomic, strong, nullable) NSObject *activeFullscreenAd;
 - (NSDictionary *)tokenPayload:(AdResourceEntry *)entry;
 - (void)emitV2EventForRequest:(NSString *)requestId
                        format:(NSString *)format
@@ -528,6 +529,7 @@ RCT_EXPORT_METHOD(showFullscreenAdV2 : (NSDictionary *)params resolver : (
           settled = YES;
           if ([self.activeFullscreenRequestId isEqualToString:requestId]) {
             self.activeFullscreenRequestId = nil;
+            self.activeFullscreenAd = nil;
           }
         }
         emit(@"terminal", nil, error, nil);
@@ -547,6 +549,7 @@ RCT_EXPORT_METHOD(showFullscreenAdV2 : (NSDictionary *)params resolver : (
       };
 
   void (^showRewarded)(RewardedAd *) = ^(RewardedAd *ad) {
+    self.activeFullscreenAd = ad;
     ad.eventHandler = ^(NSString *event, NSError *error) {
       if ([event isEqualToString:@"presented"]) {
         presented = YES;
@@ -595,6 +598,7 @@ RCT_EXPORT_METHOD(showFullscreenAdV2 : (NSDictionary *)params resolver : (
   };
 
   void (^showInterstitial)(InterstitialAd *) = ^(InterstitialAd *ad) {
+    self.activeFullscreenAd = ad;
     ad.eventHandler = ^(NSString *event, NSError *error) {
       if ([event isEqualToString:@"presented"]) {
         presented = YES;
