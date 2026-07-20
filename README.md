@@ -2,7 +2,7 @@
 
 `@24jieqi/react-native-brayant-ad` 是 React Native 国内广告 SDK 封装，当前主要接入穿山甲（Pangle / Ads-CN）。库内已经重构出一套 v2 API，用统一的 `AdRequest` 描述广告请求，支持初始化防重复、候选广告位、预加载令牌和统一事件流。
 
-- 当前版本：`1.1.7`
+- 当前版本：`1.2.2`
 - Android SDK：`com.pangle.cn:ads-sdk-pro:7.6.1.2`
 - iOS SDK：`Ads-CN >= 7.6.0.4`
 - React Native：以库工程当前配置 `0.74.x` 验证
@@ -68,6 +68,28 @@ pod install
 ```
 
 Podspec 已声明 `Ads-CN >= 7.6.0.4`，宿主侧通常不需要再单独引入穿山甲 iOS SDK。
+
+穿山甲或广告主的图片、视频素材可能使用 HTTP 地址。宿主 App 必须在
+`Info.plist` 中加入下面的定向 ATS 例外，否则 SDK 可能回调渲染成功，但图片
+区域仍显示白色：
+
+```xml
+<key>NSAppTransportSecurity</key>
+<dict>
+  <key>NSAllowsArbitraryLoadsInWebContent</key>
+  <true/>
+  <key>NSAllowsArbitraryLoadsForMedia</key>
+  <true/>
+</dict>
+```
+
+不要同时依赖 `NSAllowsArbitraryLoads`：iOS 10 及以后，只要声明了
+`NSAllowsLocalNetworking` 等细粒度键，系统就会忽略该全局开关。上面的配置只
+放宽 Web 内容和媒体素材，应用自身通过 `URLSession` 发起的普通请求仍受 ATS
+保护。
+
+App Store 审核如询问 ATS 用途，可说明：例外仅用于第三方广告 SDK 动态下发的
+图片/视频素材；业务接口继续使用 HTTPS，应用无法预先枚举所有广告素材域名。
 
 如果会调用 `requestPermission()` 请求 ATT，在宿主 App 的 `Info.plist` 中加入：
 

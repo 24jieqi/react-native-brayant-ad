@@ -16,6 +16,20 @@
 
 @implementation PAGSDKService
 
+- (void)warnIfATSConfigurationMayBlockAdAssets {
+    NSDictionary *ats =
+        [NSBundle mainBundle].infoDictionary[@"NSAppTransportSecurity"];
+    BOOL allowsWebContent =
+        [ats[@"NSAllowsArbitraryLoadsInWebContent"] boolValue];
+    BOOL allowsMedia = [ats[@"NSAllowsArbitraryLoadsForMedia"] boolValue];
+    if (!allowsWebContent || !allowsMedia) {
+        NSLog(@"[Pangle][ATS] 宿主 Info.plist 缺少 "
+              @"NSAllowsArbitraryLoadsInWebContent 或 "
+              @"NSAllowsArbitraryLoadsForMedia；HTTP 广告图片/视频可能被 "
+              @"ATS 拦截并显示为空白。请按 README 配置定向例外。");
+    }
+}
+
 + (instancetype)sharedService {
     static PAGSDKService *instance = nil;
     static dispatch_once_t onceToken;
@@ -41,6 +55,7 @@
     }
 
     self.appID = appID;
+    [self warnIfATSConfigurationMayBlockAdAssets];
 
     // 注册 AppID，并补齐调试日志级别。
     BUAdSDKConfiguration *config = [BUAdSDKConfiguration configuration];

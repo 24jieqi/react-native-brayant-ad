@@ -16,6 +16,7 @@
 @property(nonatomic, strong) UIView *containerView;
 @property(nonatomic, assign) BOOL adLoaded;
 @property(nonatomic, assign) BOOL adRendered;
+@property(nonatomic, assign) BOOL renderRequested;
 @property(nonatomic, copy) void (^loadCompletion)(BOOL, NSError *_Nullable);
 
 @end
@@ -27,6 +28,7 @@
   if (self) {
     _adLoaded = NO;
     _adRendered = NO;
+    _renderRequested = NO;
   }
   return self;
 }
@@ -42,11 +44,20 @@
                   height:(CGFloat)height
               completion:(void (^)(BOOL, NSError *_Nullable))completion {
   if (!slotID || slotID.length == 0) {
+    if (completion) {
+      NSError *error =
+          [NSError errorWithDomain:@"com.pangle.feed"
+                              code:1000
+                          userInfo:@{NSLocalizedDescriptionKey :
+                                         @"SlotID 不能为空"}];
+      completion(NO, error);
+    }
     return;
   }
 
   self.adLoaded = NO;
   self.adRendered = NO;
+  self.renderRequested = NO;
   self.expressAdView = nil;
   self.loadCompletion = completion;
 
@@ -71,16 +82,27 @@
   return self.adLoaded && self.expressAdView != nil && self.adRendered;
 }
 
-- (void)registerContainerView:(UIView *)containerView {
-  if (!self.expressAdView || !containerView) {
+- (void)registerContainerView:(UIView *)containerView
+           rootViewController:(UIViewController *)rootViewController {
+  if (!self.expressAdView || !containerView || !rootViewController) {
     return;
   }
 
   self.containerView = containerView;
+  self.expressAdView.rootViewController = rootViewController;
 
-  dispatch_async(dispatch_get_main_queue(), ^{
+  if (self.expressAdView.superview != containerView) {
+    [self.expressAdView removeFromSuperview];
+    self.expressAdView.frame = containerView.bounds;
+    self.expressAdView.autoresizingMask =
+        UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [containerView addSubview:self.expressAdView];
-  });
+  }
+
+  if (!self.renderRequested && !self.adRendered) {
+    self.renderRequested = YES;
+    [self.expressAdView render];
+  }
 }
 
 #pragma mark - BUNativeExpressAdViewDelegate
@@ -92,11 +114,6 @@
                                        views {
   if (views.count > 0) {
     self.expressAdView = views.firstObject;
-    self.expressAdView.rootViewController =
-        [UIApplication sharedApplication].keyWindow.rootViewController;
-
-    [self.expressAdView render];
-
     self.adLoaded = YES;
 
     [[NSNotificationCenter defaultCenter]
@@ -105,6 +122,26 @@
 
     if ([self.delegate respondsToSelector:@selector(expressAdDidLoad)]) {
       [self.delegate expressAdDidLoad];
+    }
+    if (self.loadCompletion) {
+      self.loadCompletion(YES, nil);
+      self.loadCompletion = nil;
+    }
+  } else {
+    NSError *error =
+        [NSError errorWithDomain:@"com.pangle.feed"
+                            code:1001
+                        userInfo:@{NSLocalizedDescriptionKey :
+                                       @"广告素材列表为空"}];
+    self.adLoaded = NO;
+    self.adRendered = NO;
+    if ([self.delegate
+            respondsToSelector:@selector(expressAdDidFailWithError:)]) {
+      [self.delegate expressAdDidFailWithError:error];
+    }
+    if (self.loadCompletion) {
+      self.loadCompletion(NO, error);
+      self.loadCompletion = nil;
     }
   }
 }
@@ -139,10 +176,6 @@
 
   if ([self.delegate respondsToSelector:@selector(expressAdDidRender)]) {
     [self.delegate expressAdDidRender];
-  }
-  if (self.loadCompletion) {
-    self.loadCompletion(YES, nil);
-    self.loadCompletion = nil;
   }
 }
 
@@ -197,6 +230,7 @@
   self.expressAdView = nil;
   self.adLoaded = NO;
   self.adRendered = NO;
+  self.renderRequested = NO;
 
   if ([self.delegate respondsToSelector:@selector(expressAdDidClose)]) {
     [self.delegate expressAdDidClose];
@@ -211,6 +245,7 @@
   self.containerView = nil;
   self.adLoaded = NO;
   self.adRendered = NO;
+  self.renderRequested = NO;
   self.loadCompletion = nil;
 }
 

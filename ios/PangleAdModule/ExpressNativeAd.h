@@ -35,7 +35,8 @@ NS_ASSUME_NONNULL_BEGIN
               completion:(void (^)(BOOL success,
                                     NSError *_Nullable error))completion;
 - (BOOL)isAdReady;
-- (void)registerContainerView:(UIView *)containerView;
+- (void)registerContainerView:(UIView *)containerView
+           rootViewController:(UIViewController *)rootViewController;
 - (void)removeAd;
 
 @end

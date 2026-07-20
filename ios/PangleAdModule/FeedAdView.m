@@ -167,8 +167,8 @@
   // 注册容器视图
   UIViewController *rootVC = [self getRootViewController];
   if (rootVC && self.adController.expressAdView) {
-    self.adController.expressAdView.rootViewController = rootVC;
-    [self.adController registerContainerView:_adContainerView];
+    [self.adController registerContainerView:_adContainerView
+                          rootViewController:rootVC];
     
     if ([self.adController isAdReady]) {
       [self expressAdDidRender];

@@ -150,6 +150,10 @@ RCT_EXPORT_METHOD(removeListeners : (double)count) {
   return YES;
 }
 
+- (dispatch_queue_t)methodQueue {
+  return dispatch_get_main_queue();
+}
+
 RCT_EXPORT_MODULE(PangleAdModule)
 
 RCT_EXPORT_METHOD(initialize : (NSString *)appID resolver : (
@@ -872,8 +876,10 @@ RCT_EXPORT_METHOD(isExpressNativeAdReady : (RCTPromiseResolveBlock)
 RCT_EXPORT_METHOD(registerExpressNativeAdContainer : (NSString *)containerRef) {
   dispatch_async(dispatch_get_main_queue(), ^{
     UIView *containerView = [self viewForTag:[containerRef integerValue]];
-    if (containerView) {
-      [self.legacyExpressNativeAd registerContainerView:containerView];
+    UIViewController *rootVC = [self rootViewController];
+    if (containerView && rootVC) {
+      [self.legacyExpressNativeAd registerContainerView:containerView
+                                     rootViewController:rootVC];
     }
   });
 }
