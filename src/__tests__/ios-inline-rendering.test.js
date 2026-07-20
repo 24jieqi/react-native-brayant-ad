@@ -52,11 +52,14 @@ describe('iOS 广告线程与渲染契约', () => {
     expect(loadSource).toContain('self.loadCompletion(YES, nil)');
   });
 
-  it('初始化时诊断宿主的两项 ATS 媒体例外', () => {
+  it('初始化时诊断原生图片请求真正需要的 ATS 全局例外', () => {
     const source = readIOSSource('PAGSDKService.m');
 
+    expect(source).toContain('NSAllowsArbitraryLoads');
     expect(source).toContain('NSAllowsArbitraryLoadsInWebContent');
     expect(source).toContain('NSAllowsArbitraryLoadsForMedia');
+    expect(source).toContain('NSAllowsLocalNetworking');
+    expect(source).toContain('hasFineGrainedGlobalKey');
     expect(source).toContain('[Pangle][ATS]');
   });
 });

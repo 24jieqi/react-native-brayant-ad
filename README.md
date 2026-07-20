@@ -2,7 +2,7 @@
 
 `@24jieqi/react-native-brayant-ad` 是 React Native 国内广告 SDK 封装，当前主要接入穿山甲（Pangle / Ads-CN）。库内已经重构出一套 v2 API，用统一的 `AdRequest` 描述广告请求，支持初始化防重复、候选广告位、预加载令牌和统一事件流。
 
-- 当前版本：`1.2.2`
+- 当前版本：`1.2.3`
 - Android SDK：`com.pangle.cn:ads-sdk-pro:7.6.1.2`
 - iOS SDK：`Ads-CN >= 7.6.0.4`
 - React Native：以库工程当前配置 `0.74.x` 验证
@@ -70,26 +70,29 @@ pod install
 Podspec 已声明 `Ads-CN >= 7.6.0.4`，宿主侧通常不需要再单独引入穿山甲 iOS SDK。
 
 穿山甲或广告主的图片、视频素材可能使用 HTTP 地址。宿主 App 必须在
-`Info.plist` 中加入下面的定向 ATS 例外，否则 SDK 可能回调渲染成功，但图片
+`Info.plist` 中加入下面的 ATS 例外，否则 SDK 可能回调渲染成功，但图片
 区域仍显示白色：
 
 ```xml
 <key>NSAppTransportSecurity</key>
 <dict>
-  <key>NSAllowsArbitraryLoadsInWebContent</key>
-  <true/>
-  <key>NSAllowsArbitraryLoadsForMedia</key>
+  <key>NSAllowsArbitraryLoads</key>
   <true/>
 </dict>
 ```
 
-不要同时依赖 `NSAllowsArbitraryLoads`：iOS 10 及以后，只要声明了
-`NSAllowsLocalNetworking` 等细粒度键，系统就会忽略该全局开关。上面的配置只
-放宽 Web 内容和媒体素材，应用自身通过 `URLSession` 发起的普通请求仍受 ATS
-保护。
+不要同时声明 `NSAllowsArbitraryLoadsInWebContent`、
+`NSAllowsArbitraryLoadsForMedia` 或 `NSAllowsLocalNetworking`。iOS 10 及以后，
+只要存在其中任意一个键（即使值为 `NO`），系统就会忽略
+`NSAllowsArbitraryLoads`，导致 SDK 通过 `URLSession` 下载的 HTTP 图片继续被
+ATS 拦截。`InWebContent` 只作用于 `WKWebView`，`ForMedia` 只作用于
+AVFoundation，二者都不覆盖原生图片请求。
 
 App Store 审核如询问 ATS 用途，可说明：例外仅用于第三方广告 SDK 动态下发的
-图片/视频素材；业务接口继续使用 HTTPS，应用无法预先枚举所有广告素材域名。
+广告主图片/视频素材，应用无法预先枚举所有广告素材域名；应用自身的业务接口
+仍只使用 HTTPS。该配置是穿山甲 iOS 官方接入文档针对客户 HTTP 素材要求的工程
+配置。参考：[穿山甲 iOS SDK 接入配置](https://www.csjplatform.com/supportcenter/28721)、
+[Apple ATS 配置说明](https://developer.apple.com/documentation/BundleResources/Information-Property-List/NSAppTransportSecurity)。
 
 如果会调用 `requestPermission()` 请求 ATT，在宿主 App 的 `Info.plist` 中加入：
 

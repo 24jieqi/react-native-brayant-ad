@@ -19,14 +19,18 @@
 - (void)warnIfATSConfigurationMayBlockAdAssets {
     NSDictionary *ats =
         [NSBundle mainBundle].infoDictionary[@"NSAppTransportSecurity"];
-    BOOL allowsWebContent =
-        [ats[@"NSAllowsArbitraryLoadsInWebContent"] boolValue];
-    BOOL allowsMedia = [ats[@"NSAllowsArbitraryLoadsForMedia"] boolValue];
-    if (!allowsWebContent || !allowsMedia) {
-        NSLog(@"[Pangle][ATS] 宿主 Info.plist 缺少 "
-              @"NSAllowsArbitraryLoadsInWebContent 或 "
-              @"NSAllowsArbitraryLoadsForMedia；HTTP 广告图片/视频可能被 "
-              @"ATS 拦截并显示为空白。请按 README 配置定向例外。");
+    BOOL allowsArbitraryLoads = [ats[@"NSAllowsArbitraryLoads"] boolValue];
+    BOOL hasFineGrainedGlobalKey =
+        ats[@"NSAllowsArbitraryLoadsInWebContent"] != nil ||
+        ats[@"NSAllowsArbitraryLoadsForMedia"] != nil ||
+        ats[@"NSAllowsLocalNetworking"] != nil;
+    if (!allowsArbitraryLoads || hasFineGrainedGlobalKey) {
+        NSLog(@"[Pangle][ATS] 当前宿主配置无法放行广告 SDK 的原生 HTTP "
+              @"图片请求。请设置 NSAllowsArbitraryLoads=YES，并移除 "
+              @"NSAllowsArbitraryLoadsInWebContent、"
+              @"NSAllowsArbitraryLoadsForMedia 和 NSAllowsLocalNetworking；"
+              @"iOS 10 及以后只要存在这些细粒度键，就会忽略 "
+              @"NSAllowsArbitraryLoads。详见 README。");
     }
 }
 
