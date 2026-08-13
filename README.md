@@ -2,7 +2,7 @@
 
 `@24jieqi/react-native-brayant-ad` 是 React Native 国内广告 SDK 封装，当前主要接入穿山甲（Pangle / Ads-CN）。库内已经重构出一套 v2 API，用统一的 `AdRequest` 描述广告请求，支持初始化防重复、候选广告位、预加载令牌和统一事件流。
 
-- 当前版本：`1.2.3`
+- 当前版本：`1.2.4`
 - Android SDK：`com.pangle.cn:ads-sdk-pro:7.6.1.2`
 - iOS SDK：`Ads-CN >= 7.6.0.4`
 - React Native：以库工程当前配置 `0.74.x` 验证
