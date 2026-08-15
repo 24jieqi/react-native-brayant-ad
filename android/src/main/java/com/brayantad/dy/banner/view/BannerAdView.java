@@ -173,14 +173,9 @@ public class BannerAdView extends RelativeLayout {
       emitV2Event("loaded", null, 0, 0);
       mBannerAd = cachedAd;
       mIsAdLoading = false;
-      bindAdListener(mBannerAd);
-      if (mBannerAd.getExpressAdView() != null) {
-        mHasRenderedAd = true;
-        attachRenderedAdView(mBannerAd.getExpressAdView(), mExpectedWidth, mExpectedHeight);
-        onAdRenderSuccess(mExpectedWidth, mExpectedHeight);
-      } else {
-        showBannerAd(mBannerAd);
-      }
+      // 预加载只完成素材加载，不代表模板已经渲染。统一调用 render，
+      // 并仅在 SDK 的 onRenderSuccess 回调中发送 presented 事件。
+      showBannerAd(mBannerAd);
       return;
     }
 
