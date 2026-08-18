@@ -51,6 +51,7 @@ public class FeedAdView extends RelativeLayout {
   private boolean mHasRenderedAd = false;
   private boolean mHasPresentedAd = false;
   private boolean mPendingPresentation = false;
+  private final Runnable mShowAdRunnable = this::showAdNow;
 
   // 当前展示的广告实例，用于资源释放
   private TTNativeExpressAd mCurrentAd;
@@ -73,26 +74,29 @@ public class FeedAdView extends RelativeLayout {
     Log.d(TAG, "setCodeId = " + _codeid + ", setWidth:" + width);
     _expectedWidth = width;
 
-    showAd();
+    scheduleShowAd();
   }
 
   public void setCodeId(String codeId) {
     Log.d(TAG, "setCodeId: " + codeId + ", _expectedWidth:" + _expectedWidth);
     _codeid = codeId;
-    showAd();
+    scheduleShowAd();
   }
 
   public void setRequestId(String requestId) {
     mRequestId = requestId == null ? "" : requestId;
+    scheduleShowAd();
   }
 
   public void setPreloadToken(String preloadToken) {
     mPreloadToken = preloadToken;
+    scheduleShowAd();
   }
 
   public void setVisible(boolean visible) {
     mVisible = visible;
     if (!visible) {
+      removeCallbacks(mShowAdRunnable);
       super.setVisibility(View.INVISIBLE);
       return;
     }
@@ -104,10 +108,15 @@ public class FeedAdView extends RelativeLayout {
       _showTTAd(mCurrentAd);
       return;
     }
-    showAd();
+    scheduleShowAd();
   }
 
-  public void showAd() {
+  private void scheduleShowAd() {
+    removeCallbacks(mShowAdRunnable);
+    post(mShowAdRunnable);
+  }
+
+  private void showAdNow() {
     if (!mVisible) {
       super.setVisibility(View.INVISIBLE);
       return;
@@ -193,6 +202,8 @@ public class FeedAdView extends RelativeLayout {
         .setSupportDeepLink(true)
         .setAdCount(1) // 请求广告数量为1到3条
         .setExpressViewAcceptedSize(_expectedWidth, _expectedHeight) // 期望模板广告view的size,单位dp,高度0自适应
+        .setImageAcceptedSize(640, 320)
+        .setNativeAdType(AdSlot.TYPE_INTERACTION_AD)
         .setAdLoadType(PRELOAD)
         .build();
 
@@ -556,6 +567,7 @@ public class FeedAdView extends RelativeLayout {
     mHasRenderedAd = false;
     mHasPresentedAd = false;
     mPendingPresentation = false;
+    removeCallbacks(mShowAdRunnable);
     // 清空广告容器
     final RelativeLayout mExpressContainer = findViewById(R.id.feed_container);
     if (mExpressContainer != null) {
@@ -586,7 +598,7 @@ public class FeedAdView extends RelativeLayout {
       return;
     }
     // 路由切换后重新挂载时，仅在无可复用实例时才触发加载
-    showAd();
+    scheduleShowAd();
   }
 
   private boolean canReuseRenderedAd() {

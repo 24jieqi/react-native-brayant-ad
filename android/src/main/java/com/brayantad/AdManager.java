@@ -223,6 +223,12 @@ public class AdManager extends ReactContextBaseJavaModule {
       .setAdCount(1)
       .setExpressViewAcceptedSize(width > 0 ? width : 320, "banner".equals(format) ? Math.max(height, 50) : 0);
 
+    if ("feed".equals(format)) {
+      builder
+        .setImageAcceptedSize(640, 320)
+        .setNativeAdType(AdSlot.TYPE_INTERACTION_AD);
+    }
+
     TTAdNative.NativeExpressAdListener listener = new TTAdNative.NativeExpressAdListener() {
       @Override
       public void onError(int code, String message) {
