@@ -9,6 +9,8 @@
 #import <BUAdSDK/BUNativeExpressAdManager.h>
 #import <BUAdSDK/BUNativeExpressAdView.h>
 
+static void *ExpressAdSizeContext = &ExpressAdSizeContext;
+
 @interface ExpressNativeAd () <BUNativeExpressAdViewDelegate>
 
 @property(nonatomic, strong) BUNativeExpressAdManager *expressAdManager;
@@ -78,6 +80,39 @@
   [self.expressAdManager loadAdDataWithCount:1];
 }
 
+// 广告尺寸由模板决定，不能用占位容器的高度反向覆盖。
+- (void)setExpressAdView:(BUNativeExpressAdView *)expressAdView {
+  if (_expressAdView == expressAdView) {
+    return;
+  }
+  [_expressAdView removeObserver:self forKeyPath:@"bounds" context:ExpressAdSizeContext];
+  [_expressAdView removeObserver:self forKeyPath:@"frame" context:ExpressAdSizeContext];
+  _expressAdView = expressAdView;
+  [_expressAdView addObserver:self forKeyPath:@"bounds"
+                     options:NSKeyValueObservingOptionNew context:ExpressAdSizeContext];
+  [_expressAdView addObserver:self forKeyPath:@"frame"
+                     options:NSKeyValueObservingOptionNew context:ExpressAdSizeContext];
+}
+
+- (void)observeValueForKeyPath:(NSString *)keyPath
+                    ofObject:(id)object
+                      change:(NSDictionary<NSKeyValueChangeKey, id> *)change
+                     context:(void *)context {
+  if (context != ExpressAdSizeContext) {
+    [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+    return;
+  }
+  if (object == self.expressAdView && [self isAdReady] &&
+      [self.delegate respondsToSelector:@selector(expressAdDidRender)]) {
+    [self.delegate expressAdDidRender];
+  }
+}
+
+- (void)dealloc {
+  [_expressAdView removeObserver:self forKeyPath:@"bounds" context:ExpressAdSizeContext];
+  [_expressAdView removeObserver:self forKeyPath:@"frame" context:ExpressAdSizeContext];
+}
+
 - (BOOL)isAdReady {
   return self.adLoaded && self.expressAdView != nil && self.adRendered;
 }
@@ -93,9 +128,10 @@
 
   if (self.expressAdView.superview != containerView) {
     [self.expressAdView removeFromSuperview];
-    self.expressAdView.frame = containerView.bounds;
-    self.expressAdView.autoresizingMask =
-        UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    CGRect adFrame = self.expressAdView.frame;
+    adFrame.origin = CGPointZero;
+    self.expressAdView.frame = adFrame;
+    self.expressAdView.autoresizingMask = UIViewAutoresizingNone;
     [containerView addSubview:self.expressAdView];
   }
 

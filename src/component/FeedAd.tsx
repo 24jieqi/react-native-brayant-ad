@@ -63,7 +63,7 @@ export const FeedAd = ({
   const [candidateIndex, setCandidateIndex] = useState(0);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onEventRef = useRef(onEvent);
-  const forwardedEventKeysRef = useRef<Set<string>>(new Set());
+  const forwardedEventKeysRef = useRef<Map<string, string>>(new Map());
   const slotId = candidateSlotIds[candidateIndex] ?? '';
 
   useEffect(() => {
@@ -141,7 +141,7 @@ export const FeedAd = ({
       }
       if (event.state === 'rendered' || event.state === 'presented') {
         clearCandidateTimeout();
-        if (event.height && event.height > 0) {
+        if (Number.isFinite(event.height) && event.height && event.height > 0) {
           setRenderedHeight(Math.ceil(event.height));
         }
       }
@@ -159,11 +159,16 @@ export const FeedAd = ({
         );
         return;
       }
+      // 布局不是一次性的生命周期事件：异步素材完成后仍可能更新尺寸。
+      const layoutKey =
+        event.state === 'rendered' || event.state === 'presented'
+          ? `:${event.width ?? ''}:${event.height ?? ''}`
+          : '';
       const eventKey = `${event.slotId}:${event.state}:${event.action ?? ''}`;
-      if (forwardedEventKeysRef.current.has(eventKey)) {
+      if (forwardedEventKeysRef.current.get(eventKey) === layoutKey) {
         return;
       }
-      forwardedEventKeysRef.current.add(eventKey);
+      forwardedEventKeysRef.current.set(eventKey, layoutKey);
       onEventRef.current?.(event);
     },
     [
@@ -188,7 +193,7 @@ export const FeedAd = ({
   }
 
   return (
-    <View style={[{ width, height: renderedHeight }, style]}>
+    <View style={[{ width }, style, { height: renderedHeight }]}>
       <NativeFeedAd
         key={`${request.requestId}:${slotId}`}
         style={StyleSheet.absoluteFillObject}

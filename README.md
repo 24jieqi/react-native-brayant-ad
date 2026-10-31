@@ -337,6 +337,10 @@ const token = await preloadFeedAd(request);
 />;
 ```
 
+信息流高度由广告模板决定，素材异步布局后仍可能变化。组件会持续更新自身高度，`rendered` 事件也可能携带新尺寸再次触发；相同状态和尺寸的连续事件会去重。业务如需同步外层尺寸，应同时处理 `rendered` 和 `presented` 中的有效 `height`，并单独保证加载、曝光等业务回调只执行一次。
+
+占位空间请使用 `style.minHeight`；组件测得的真实高度会优先于 `style.height`。请求中的 `size.width` 应与广告实际可用宽度一致。承载广告的弹窗或卡片需要允许内容撑高，受屏幕高度限制时提供滚动区域。
+
 `FeedAd` props：
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |

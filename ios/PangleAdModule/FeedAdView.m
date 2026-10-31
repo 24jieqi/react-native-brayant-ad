@@ -10,6 +10,7 @@
 #import "AdResourceStore.h"
 #import "ExpressNativeAd.h"
 #import <React/RCTLog.h>
+#import <math.h>
 
 @interface FeedAdView () <ExpressNativeAdDelegate>
 
@@ -19,6 +20,7 @@
 @property (nonatomic, assign) BOOL didSendRenderedEvent;
 @property (nonatomic, assign) BOOL didSendPresentedEvent;
 @property (nonatomic, assign) BOOL pendingPresentation;
+@property (nonatomic, assign) CGSize lastReportedAdSize;
 @property(nonatomic, strong) ExpressNativeAd *adController;
 @property(nonatomic, copy) NSString *lastLoadKey;
 @property(nonatomic, copy) NSString *resourceSource;
@@ -128,6 +130,7 @@
   _didSendRenderedEvent = NO;
   _didSendPresentedEvent = NO;
   _pendingPresentation = NO;
+  self.lastReportedAdSize = CGSizeZero;
 
   AdResourceEntry *entry =
       [[AdResourceStore sharedStore] consumeToken:self.preloadToken
@@ -207,35 +210,27 @@
 }
 
 - (void)expressAdDidRender {
-  RCTLog(@"[FeedAdView] 广告渲染完成");
-  if (self.didSendRenderedEvent) {
-    return;
-  }
-
+  ExpressNativeAd *controller = self.adController;
   dispatch_async(dispatch_get_main_queue(), ^{
-    if (self.didSendRenderedEvent) {
+    // 丢弃已被新请求替换的异步布局，不用容器的占位高度冒充广告尺寸。
+    if (controller != self.adController || ![controller isAdReady]) {
       return;
     }
-
-    CGSize adSize = self.adController.expressAdView.bounds.size;
-    CGFloat width = adSize.width > 0 ? adSize.width : self.adContainerView.bounds.size.width;
-    CGFloat height = adSize.height > 0 ? adSize.height : self.adContainerView.bounds.size.height;
-
-    if (height <= 0) {
+    CGSize adSize = controller.expressAdView.bounds.size;
+    if (!isfinite(adSize.width) || !isfinite(adSize.height) ||
+        adSize.width <= 0 || adSize.height <= 0) {
       return;
     }
-
-    self.didSendRenderedEvent = YES;
-    if (self.onAdLayout) {
-      self.onAdLayout(@{
-        @"width" : @(width),
-        @"height" : @(height),
-      });
+    if (!self.didSendRenderedEvent ||
+        !CGSizeEqualToSize(self.lastReportedAdSize, adSize)) {
+      self.lastReportedAdSize = adSize;
+      self.didSendRenderedEvent = YES;
+      if (self.onAdLayout) {
+        self.onAdLayout(@{@"width" : @(adSize.width), @"height" : @(adSize.height)});
+      }
+      [self emitEventWithState:@"rendered" error:nil
+                        width:adSize.width height:adSize.height];
     }
-    [self emitEventWithState:@"rendered"
-                       error:nil
-                       width:width
-                      height:height];
     if (self.pendingPresentation) {
       self.pendingPresentation = NO;
       [self expressAdDidShow];
@@ -244,9 +239,9 @@
 }
 
 - (void)expressAdDidShow {
-  RCTLog(@"[FeedAdView] 广告开始展示");
+  ExpressNativeAd *controller = self.adController;
   dispatch_async(dispatch_get_main_queue(), ^{
-    if (self.didSendPresentedEvent) {
+    if (controller != self.adController || self.didSendPresentedEvent) {
       return;
     }
     if (!self.didSendRenderedEvent) {
@@ -254,13 +249,10 @@
       [self expressAdDidRender];
       return;
     }
-
     self.didSendPresentedEvent = YES;
-    CGSize adSize = self.adController.expressAdView.bounds.size;
-    [self emitEventWithState:@"presented"
-                       error:nil
-                       width:adSize.width
-                      height:adSize.height];
+    CGSize adSize = controller.expressAdView.bounds.size;
+    [self emitEventWithState:@"presented" error:nil
+                      width:adSize.width height:adSize.height];
   });
 }
 

@@ -51,6 +51,9 @@ public class FeedAdView extends RelativeLayout {
   private boolean mHasRenderedAd = false;
   private boolean mHasPresentedAd = false;
   private boolean mPendingPresentation = false;
+  private View mObservedAdView;
+  private View.OnLayoutChangeListener mAdLayoutListener;
+  private int mReportedAdHeight = 0;
   private final Runnable mShowAdRunnable = this::showAdNow;
 
   // 当前展示的广告实例，用于资源释放
@@ -150,6 +153,7 @@ public class FeedAdView extends RelativeLayout {
     }
     mContext = activity;
     mIsAdLoading = true;
+    clearAdLayoutListener();
     mHasRenderedAd = false;
     mHasPresentedAd = false;
     mPendingPresentation = false;
@@ -310,7 +314,7 @@ public class FeedAdView extends RelativeLayout {
 
         @Override
         public void onRenderSuccess(View view, float width, float height) {
-          if (ad != mCurrentAd || mHasRenderedAd) {
+          if (ad != mCurrentAd) {
             return;
           }
           Log.d(
@@ -320,19 +324,27 @@ public class FeedAdView extends RelativeLayout {
               ", view=" + getWidth() + "x" + getHeight() + "px"
           );
           mIsAdLoading = false;
+          boolean firstRender = !mHasRenderedAd;
           mHasRenderedAd = true;
-          RelativeLayout mExpressContainer = findViewById(R.id.feed_container);
-          if (mExpressContainer != null) {
-            mExpressContainer.removeAllViews();
-            mExpressContainer.addView(view);
+          if (firstRender) {
+            observeAdLayout(ad, view);
+            RelativeLayout mExpressContainer = findViewById(R.id.feed_container);
+            if (mExpressContainer != null) {
+              mExpressContainer.removeAllViews();
+              mExpressContainer.addView(view);
+            }
           }
           FeedAdView.this.setVisibility(mVisible ? View.VISIBLE : View.INVISIBLE);
-          onAdLayout((int) width, (int) height);
-          emitV2Event("rendered", null, (int) width, (int) height);
+          // 向上取整，避免小数 dp 被截断后裁掉素材底部。
+          int renderedWidth = (int) Math.ceil(width);
+          int renderedHeight = (int) Math.ceil(height);
+          mReportedAdHeight = renderedHeight;
+          onAdLayout(renderedWidth, renderedHeight);
+          emitV2Event("rendered", null, renderedWidth, renderedHeight);
           if (mPendingPresentation && !mHasPresentedAd) {
             mPendingPresentation = false;
             mHasPresentedAd = true;
-            emitV2Event("presented", null, (int) width, (int) height);
+            emitV2Event("presented", null, renderedWidth, renderedHeight);
           }
         }
       }
@@ -398,6 +410,41 @@ public class FeedAdView extends RelativeLayout {
         }
       }
     );
+  }
+
+  private void observeAdLayout(TTNativeExpressAd ad, View view) {
+    clearAdLayoutListener();
+    mObservedAdView = view;
+    mAdLayoutListener = (changedView, left, top, right, bottom,
+                        oldLeft, oldTop, oldRight, oldBottom) -> {
+      if (ad != mCurrentAd || !mHasRenderedAd) {
+        return;
+      }
+      float density = getResources().getDisplayMetrics().density;
+      // 用像素上限比较，避免 dp 与像素舍入引发逐次增高的反馈循环。
+      if (bottom - top <= Math.ceil(mReportedAdHeight * density)) {
+        return;
+      }
+      int height = (int) Math.ceil((bottom - top) / density);
+      // 父容器尚未扩高时可能回报受限高度，只接受实际增长。
+      if (height <= mReportedAdHeight) {
+        return;
+      }
+      mReportedAdHeight = height;
+      int width = (int) Math.ceil((right - left) / density);
+      onAdLayout(width, height);
+      emitV2Event("rendered", null, width, height);
+    };
+    view.addOnLayoutChangeListener(mAdLayoutListener);
+  }
+
+  private void clearAdLayoutListener() {
+    if (mObservedAdView != null && mAdLayoutListener != null) {
+      mObservedAdView.removeOnLayoutChangeListener(mAdLayoutListener);
+    }
+    mObservedAdView = null;
+    mAdLayoutListener = null;
+    mReportedAdHeight = 0;
   }
 
   /**
@@ -493,6 +540,7 @@ public class FeedAdView extends RelativeLayout {
 
   public void onAdClose(String reason) {
     Log.d(TAG, "onAdClose: " + reason);
+    clearAdLayoutListener();
     mHasRenderedAd = false;
     super.setVisibility(View.INVISIBLE);
     emitV2Event("terminal", null, 0, 0);
@@ -564,6 +612,7 @@ public class FeedAdView extends RelativeLayout {
   public void destroy() {
     Log.d(TAG, "destroy: 释放广告资源");
     mIsAdLoading = false;
+    clearAdLayoutListener();
     mHasRenderedAd = false;
     mHasPresentedAd = false;
     mPendingPresentation = false;
