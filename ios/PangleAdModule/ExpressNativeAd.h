@@ -37,6 +37,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)isAdReady;
 - (void)registerContainerView:(UIView *)containerView
            rootViewController:(UIViewController *)rootViewController;
+- (void)updateSizeObservation;
 - (void)removeAd;
 
 @end

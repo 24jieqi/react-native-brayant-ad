@@ -14,7 +14,6 @@ import com.brayantad.R;
 import com.brayantad.core.AdResourcePool;
 import com.brayantad.dy.DyADCore;
 import com.brayantad.utils.DislikeDialog;
-import com.brayantad.utils.Utils;
 import com.bytedance.sdk.openadsdk.AdSlot;
 import com.bytedance.sdk.openadsdk.DislikeInfo;
 import com.bytedance.sdk.openadsdk.FilterWord;
@@ -54,6 +53,8 @@ public class FeedAdView extends RelativeLayout {
   private View mObservedAdView;
   private View.OnLayoutChangeListener mAdLayoutListener;
   private int mReportedAdHeight = 0;
+  private int mReportedAdWidth = 0;
+  private final Runnable mLayoutAdRunnable = this::relayoutAdContent;
   private final Runnable mShowAdRunnable = this::showAdNow;
 
   // 当前展示的广告实例，用于资源释放
@@ -69,8 +70,7 @@ public class FeedAdView extends RelativeLayout {
     // 初始隐藏容器，避免白屏闪现
     setVisibility(View.INVISIBLE);
 
-    // 这个函数很关键，不然不能触发再次渲染，让 view 在 RN 里渲染成功!!
-    Utils.setupLayoutHack(this);
+    // React Native 不负责 SDK 动态子视图的布局，按实际请求触发布局。
   }
 
   public void setWidth(int width) {
@@ -335,16 +335,21 @@ public class FeedAdView extends RelativeLayout {
             }
           }
           FeedAdView.this.setVisibility(mVisible ? View.VISIBLE : View.INVISIBLE);
-          // 向上取整，避免小数 dp 被截断后裁掉素材底部。
-          int renderedWidth = (int) Math.ceil(width);
-          int renderedHeight = (int) Math.ceil(height);
-          mReportedAdHeight = renderedHeight;
-          onAdLayout(renderedWidth, renderedHeight);
-          emitV2Event("rendered", null, renderedWidth, renderedHeight);
+          // 先测量完整素材，SDK 回调尺寸仅在视图尚无有效尺寸时兜底。
+          layoutAdContent();
+          if (mReportedAdHeight <= 0) {
+            int renderedWidth = (int) Math.ceil(width);
+            int renderedHeight = (int) Math.ceil(height);
+            mReportedAdHeight = renderedHeight;
+            mReportedAdWidth = renderedWidth;
+            onAdLayout(renderedWidth, renderedHeight);
+            emitV2Event("rendered", null, renderedWidth, renderedHeight);
+          }
+          requestLayout();
           if (mPendingPresentation && !mHasPresentedAd) {
             mPendingPresentation = false;
             mHasPresentedAd = true;
-            emitV2Event("presented", null, renderedWidth, renderedHeight);
+            emitV2Event("presented", null, mReportedAdWidth, mReportedAdHeight);
           }
         }
       }
@@ -412,28 +417,71 @@ public class FeedAdView extends RelativeLayout {
     );
   }
 
+  @Override
+  public void requestLayout() {
+    super.requestLayout();
+    // SDK 异步素材会自行 requestLayout；合并同一帧内的多次请求。
+    if (mLayoutAdRunnable != null) {
+      removeCallbacks(mLayoutAdRunnable);
+      post(mLayoutAdRunnable);
+    }
+  }
+
+  @Override
+  protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+    layoutAdContent();
+  }
+
+  private void relayoutAdContent() {
+    if (getWidth() <= 0) {
+      return;
+    }
+    // 完成宿主自身的布局，清除 layout-requested 标记，后续素材请求才能继续向上传播。
+    measure(
+      View.MeasureSpec.makeMeasureSpec(getWidth(), View.MeasureSpec.EXACTLY),
+      View.MeasureSpec.makeMeasureSpec(getHeight(), View.MeasureSpec.EXACTLY)
+    );
+    layout(getLeft(), getTop(), getRight(), getBottom());
+    layoutAdContent();
+  }
+
+  private void layoutAdContent() {
+    final RelativeLayout container = findViewById(R.id.feed_container);
+    int width = getWidth();
+    if (container == null || width <= 0) {
+      return;
+    }
+    // 只约束可用宽度。父级仍是占位高度时，也必须测出模板的完整高度。
+    container.measure(
+      View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+      View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+    );
+    container.layout(0, 0, container.getMeasuredWidth(), container.getMeasuredHeight());
+    if (!mHasRenderedAd || mObservedAdView == null || mCurrentAd == null) {
+      return;
+    }
+    float density = getResources().getDisplayMetrics().density;
+    int measuredWidth = (int) Math.ceil(container.getMeasuredWidth() / density);
+    int measuredHeight = (int) Math.ceil(container.getMeasuredHeight() / density);
+    if (measuredWidth <= 0 || measuredHeight <= 0 ||
+        (measuredWidth == mReportedAdWidth && measuredHeight == mReportedAdHeight)) {
+      return;
+    }
+    mReportedAdWidth = measuredWidth;
+    mReportedAdHeight = measuredHeight;
+    onAdLayout(measuredWidth, measuredHeight);
+    emitV2Event("rendered", null, measuredWidth, measuredHeight);
+  }
+
   private void observeAdLayout(TTNativeExpressAd ad, View view) {
     clearAdLayoutListener();
     mObservedAdView = view;
     mAdLayoutListener = (changedView, left, top, right, bottom,
                         oldLeft, oldTop, oldRight, oldBottom) -> {
-      if (ad != mCurrentAd || !mHasRenderedAd) {
-        return;
+      if (ad == mCurrentAd && mHasRenderedAd) {
+        removeCallbacks(mLayoutAdRunnable);
+        post(mLayoutAdRunnable);
       }
-      float density = getResources().getDisplayMetrics().density;
-      // 用像素上限比较，避免 dp 与像素舍入引发逐次增高的反馈循环。
-      if (bottom - top <= Math.ceil(mReportedAdHeight * density)) {
-        return;
-      }
-      int height = (int) Math.ceil((bottom - top) / density);
-      // 父容器尚未扩高时可能回报受限高度，只接受实际增长。
-      if (height <= mReportedAdHeight) {
-        return;
-      }
-      mReportedAdHeight = height;
-      int width = (int) Math.ceil((right - left) / density);
-      onAdLayout(width, height);
-      emitV2Event("rendered", null, width, height);
     };
     view.addOnLayoutChangeListener(mAdLayoutListener);
   }
@@ -445,6 +493,8 @@ public class FeedAdView extends RelativeLayout {
     mObservedAdView = null;
     mAdLayoutListener = null;
     mReportedAdHeight = 0;
+    mReportedAdWidth = 0;
+    removeCallbacks(mLayoutAdRunnable);
   }
 
   /**
@@ -629,11 +679,13 @@ public class FeedAdView extends RelativeLayout {
     }
     // 移除所有子视图
     removeAllViews();
+    removeCallbacks(mLayoutAdRunnable);
   }
 
   @Override
   protected void onAttachedToWindow() {
     super.onAttachedToWindow();
+    requestLayout();
     if (!mVisible) {
       super.setVisibility(View.INVISIBLE);
       return;
@@ -648,6 +700,13 @@ public class FeedAdView extends RelativeLayout {
     }
     // 路由切换后重新挂载时，仅在无可复用实例时才触发加载
     scheduleShowAd();
+  }
+
+  @Override
+  protected void onDetachedFromWindow() {
+    removeCallbacks(mLayoutAdRunnable);
+    removeCallbacks(mShowAdRunnable);
+    super.onDetachedFromWindow();
   }
 
   private boolean canReuseRenderedAd() {

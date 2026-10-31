@@ -341,6 +341,8 @@ const token = await preloadFeedAd(request);
 
 占位空间请使用 `style.minHeight`；组件测得的真实高度会优先于 `style.height`。请求中的 `size.width` 应与广告实际可用宽度一致。承载广告的弹窗或卡片需要允许内容撑高，受屏幕高度限制时提供滚动区域。
 
+原生层同样需要按模板真实尺寸布局：Android 信息流容器保留宽度约束、独立测量完整内容高度，不再逐帧强制套用 RN 占位高度；iOS 在挂载期间检查模板根视图尺寸，不依赖第三方视图的 KVO 通知，重新挂载后恢复检查。此处涉及原生源码，接入修复后的 SDK 必须重新构建并安装应用，仅更新 JS 或热更新无法生效。
+
 `FeedAd` props：
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
@@ -888,6 +890,19 @@ pnpm prepare
 ```
 
 因为库产物由 `react-native-builder-bob` 生成到 `lib/`。
+
+信息流原生测量回归：
+
+```bash
+# Android：覆盖占位高度裁切、异步增高/缩短和宽度约束
+(cd android && ./gradlew testDebugUnitTest)
+
+# iOS：在已安装的模拟器中运行真实 UIKit 尺寸变化回归，无需请求广告
+# 从仓库根目录执行，可通过 SIMULATOR_ID 指定现有模拟器
+bash scripts/test-ios-feed-layout.sh
+```
+
+这些回归使用可控素材验证布局及尺寸通知；上线前仍应在真机中检查实时广告、预加载广告、弹窗及页面等待广告的完整展示。
 
 示例应用：
 

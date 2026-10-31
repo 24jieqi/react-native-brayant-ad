@@ -4,12 +4,10 @@
 //
 
 #import "ExpressNativeAd.h"
-#import "PangleAdModule.h"
+#import "BrayantAdSizeObserver.h"
 #import <BUAdSDK/BUAdSlot.h>
 #import <BUAdSDK/BUNativeExpressAdManager.h>
 #import <BUAdSDK/BUNativeExpressAdView.h>
-
-static void *ExpressAdSizeContext = &ExpressAdSizeContext;
 
 @interface ExpressNativeAd () <BUNativeExpressAdViewDelegate>
 
@@ -19,6 +17,7 @@ static void *ExpressAdSizeContext = &ExpressAdSizeContext;
 @property(nonatomic, assign) BOOL adLoaded;
 @property(nonatomic, assign) BOOL adRendered;
 @property(nonatomic, assign) BOOL renderRequested;
+@property(nonatomic, strong) BrayantAdSizeObserver *sizeObserver;
 @property(nonatomic, copy) void (^loadCompletion)(BOOL, NSError *_Nullable);
 
 @end
@@ -80,37 +79,35 @@ static void *ExpressAdSizeContext = &ExpressAdSizeContext;
   [self.expressAdManager loadAdDataWithCount:1];
 }
 
-// 广告尺寸由模板决定，不能用占位容器的高度反向覆盖。
+// SDK 接口视图不保证 frame/bounds 的 KVO 通知，直接跟踪其实际尺寸。
 - (void)setExpressAdView:(BUNativeExpressAdView *)expressAdView {
   if (_expressAdView == expressAdView) {
     return;
   }
-  [_expressAdView removeObserver:self forKeyPath:@"bounds" context:ExpressAdSizeContext];
-  [_expressAdView removeObserver:self forKeyPath:@"frame" context:ExpressAdSizeContext];
+  [self.sizeObserver stop];
+  self.sizeObserver = nil;
   _expressAdView = expressAdView;
-  [_expressAdView addObserver:self forKeyPath:@"bounds"
-                     options:NSKeyValueObservingOptionNew context:ExpressAdSizeContext];
-  [_expressAdView addObserver:self forKeyPath:@"frame"
-                     options:NSKeyValueObservingOptionNew context:ExpressAdSizeContext];
-}
-
-- (void)observeValueForKeyPath:(NSString *)keyPath
-                    ofObject:(id)object
-                      change:(NSDictionary<NSKeyValueChangeKey, id> *)change
-                     context:(void *)context {
-  if (context != ExpressAdSizeContext) {
-    [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+  if (!expressAdView) {
     return;
   }
-  if (object == self.expressAdView && [self isAdReady] &&
-      [self.delegate respondsToSelector:@selector(expressAdDidRender)]) {
-    [self.delegate expressAdDidRender];
-  }
+  __weak typeof(self) weakSelf = self;
+  self.sizeObserver = [[BrayantAdSizeObserver alloc]
+      initWithView:expressAdView onSizeChange:^(__unused CGSize size) {
+        __strong typeof(weakSelf) self = weakSelf;
+        if ([self isAdReady] &&
+            [self.delegate respondsToSelector:@selector(expressAdDidRender)]) {
+          [self.delegate expressAdDidRender];
+        }
+      }];
 }
 
-- (void)dealloc {
-  [_expressAdView removeObserver:self forKeyPath:@"bounds" context:ExpressAdSizeContext];
-  [_expressAdView removeObserver:self forKeyPath:@"frame" context:ExpressAdSizeContext];
+- (void)updateSizeObservation {
+  if ([self isAdReady] && self.containerView.window) {
+    [self.sizeObserver start];
+    [self.sizeObserver checkForSizeChange];
+  } else {
+    [self.sizeObserver stop];
+  }
 }
 
 - (BOOL)isAdReady {
@@ -134,6 +131,8 @@ static void *ExpressAdSizeContext = &ExpressAdSizeContext;
     self.expressAdView.autoresizingMask = UIViewAutoresizingNone;
     [containerView addSubview:self.expressAdView];
   }
+
+  [self updateSizeObservation];
 
   if (!self.renderRequested && !self.adRendered) {
     self.renderRequested = YES;
@@ -171,6 +170,7 @@ static void *ExpressAdSizeContext = &ExpressAdSizeContext;
                                        @"广告素材列表为空"}];
     self.adLoaded = NO;
     self.adRendered = NO;
+    [self updateSizeObservation];
     if ([self.delegate
             respondsToSelector:@selector(expressAdDidFailWithError:)]) {
       [self.delegate expressAdDidFailWithError:error];
@@ -187,6 +187,7 @@ static void *ExpressAdSizeContext = &ExpressAdSizeContext;
                             error:(NSError *)error {
   self.adLoaded = NO;
   self.adRendered = NO;
+  [self updateSizeObservation];
 
   [[NSNotificationCenter defaultCenter]
       postNotificationName:@"PangleExpressNativeAdLoadFail"
@@ -204,7 +205,11 @@ static void *ExpressAdSizeContext = &ExpressAdSizeContext;
 
 - (void)nativeExpressAdViewRenderSuccess:
     (BUNativeExpressAdView *)nativeExpressAdView {
+  if (nativeExpressAdView != self.expressAdView) {
+    return;
+  }
   self.adRendered = YES;
+  [self updateSizeObservation];
 
   [[NSNotificationCenter defaultCenter]
       postNotificationName:@"PangleExpressNativeAdRenderSuccess"
@@ -220,6 +225,7 @@ static void *ExpressAdSizeContext = &ExpressAdSizeContext;
                                 error:(NSError *)error {
   self.adLoaded = NO;
   self.adRendered = NO;
+  [self updateSizeObservation];
 
   [[NSNotificationCenter defaultCenter]
       postNotificationName:@"PangleExpressNativeAdLoadFail"

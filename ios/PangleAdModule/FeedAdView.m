@@ -73,6 +73,17 @@
   ]];
 }
 
+// 挂载和宿主布局变化后重新检查，弹窗首次展示时不能依赖一次渲染回调。
+- (void)didMoveToWindow {
+  [super didMoveToWindow];
+  [self.adController updateSizeObservation];
+}
+
+- (void)layoutSubviews {
+  [super layoutSubviews];
+  [self.adController updateSizeObservation];
+}
+
 #pragma mark - Properties
 
 - (void)setCodeid:(NSString *)codeid {
@@ -89,6 +100,7 @@
   _visible = visible;
   _isVisible = visible;
   self.hidden = !_isVisible;
+  [self.adController updateSizeObservation];
 }
 
 - (void)setRequestId:(NSString *)requestId {

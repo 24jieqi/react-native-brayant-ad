@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<com.brayantad.dy.feedAd.view.FeedAdContentLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/feed_container"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -7,4 +7,4 @@
     android:orientation="vertical"
     android:layout_gravity="center"
     >
-</RelativeLayout>
+</com.brayantad.dy.feedAd.view.FeedAdContentLayout>
